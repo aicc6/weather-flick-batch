@@ -112,7 +112,7 @@ weather-flick-batch/
 ├── 📁 app/                     # 핵심 애플리케이션 모듈
 │   ├── 📁 collectors/          # 데이터 수집기
 │   │   ├── weather_collector.py    # 기상청 API 수집기
-│   │   └── tourism_collector.py    # 관광공사 API 수집기
+│   │   └── kto_api.py              # 한국관광공사 API 수집기
 │   ├── 📁 core/               # 기본 클래스 및 로거
 │   │   ├── base_job.py            # 배치 작업 기본 클래스
 │   │   └── logger.py              # 중앙 로깅 시스템
@@ -144,7 +144,7 @@ weather-flick-batch/
 python -c "from app.collectors.weather_collector import WeatherDataCollector; print('Weather collector imported successfully')"
 
 # 관광지 데이터 수집기 테스트
-python -c "from app.collectors.tourism_collector import TourismDataCollector; print('Tourism collector imported successfully')"
+python -c "from app.collectors.kto_api import KTODataCollector; print('KTO collector imported successfully')"
 
 # 추천 엔진 테스트
 python jobs/recommendation/travel_recommendation_engine.py

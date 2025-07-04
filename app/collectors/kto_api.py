@@ -13,6 +13,8 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
 
+from app.core.multi_api_key_manager import get_api_key_manager, APIProvider
+
 # 환경 변수 로드
 load_dotenv(override=True)
 
@@ -21,18 +23,24 @@ class KTODataCollector:
     """한국관광공사 데이터 수집기"""
 
     def __init__(self):
-        self.api_key = os.getenv("KTO_API_KEY")
         self.base_url = os.getenv(
             "KTO_API_BASE_URL", "http://apis.data.go.kr/B551011/KorService2"
         )
 
         self.logger = logging.getLogger(__name__)
 
+        # 다중 API 키 시스템 사용
+        self.key_manager = get_api_key_manager()
+        active_key = self.key_manager.get_active_key(APIProvider.KTO)
+        self.api_key = active_key.key if active_key else None
+        
         if not self.api_key:
             self.logger.warning(
                 "KTO_API_KEY가 설정되지 않았습니다. 테스트 데이터를 생성합니다."
             )
             self.api_key = "test_key"
+        else:
+            self.logger.info(f"다중 키 시스템에서 API 키 로드: {self.api_key[:10]}...")
 
         import requests.adapters
         import urllib3

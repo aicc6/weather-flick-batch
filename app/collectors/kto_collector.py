@@ -8,11 +8,11 @@
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
-from app.core.api_client import KTOAPIClient
+from app.core.base_api_client import KTOAPIClient
 
 
-class UnifiedKTOClient(KTOAPIClient):
-    """통합된 한국관광공사 API 클라이언트"""
+class KTODataCollector(KTOAPIClient):
+    """한국관광공사 데이터 수집기"""
 
     def __init__(self, api_key: str, base_url: str = None):
         super().__init__(api_key, base_url)

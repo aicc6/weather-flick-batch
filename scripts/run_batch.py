@@ -11,7 +11,7 @@ from pathlib import Path
 from datetime import datetime
 
 # 프로젝트 루트를 sys.path에 추가
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from app.schedulers.advanced_scheduler import (
@@ -33,7 +33,7 @@ from jobs.system_maintenance.log_cleanup_job import log_cleanup_task
 from jobs.monitoring.health_check_job import health_check_task
 from jobs.recommendation.recommendation_job import RecommendationJob
 from jobs.quality.data_quality_job import DataQualityJob
-from jobs.tourism.tourism_sync_job import TourismSyncJob
+# from jobs.tourism.tourism_sync_job import TourismSyncJob  # 존재하지 않는 모듈
 from jobs.tourism.comprehensive_tourism_job import ComprehensiveTourismJob, IncrementalTourismJob
 from jobs.system_maintenance.database_backup_job import DatabaseBackupJob
 
@@ -111,20 +111,9 @@ class BatchJobRunner:
         }
 
     def _create_tourism_job(self):
-        """관광지 동기화 작업 생성"""
-        config = JobConfig(
-            job_name="tourism_sync",
-            job_type=JobType.TOURIST_DATA,
-            schedule_expression="0 4 * * SUN",
-            retry_count=2,
-            timeout_minutes=120,
-            dependencies=[],
-            enabled=True,
-            metadata={
-                "description": "한국관광공사 API를 통한 관광지 정보 수집 및 동기화"
-            },
-        )
-        job = TourismSyncJob(config)
+        """관광지 동기화 작업 생성 (ComprehensiveTourismJob 사용)"""
+        # TourismSyncJob이 없으므로 ComprehensiveTourismJob으로 대체
+        job = ComprehensiveTourismJob()
         return job.execute()
 
     def _create_recommendation_job(self):

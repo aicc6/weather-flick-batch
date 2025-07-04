@@ -29,7 +29,7 @@ from jobs.system_maintenance.log_cleanup_job import log_cleanup_task
 from jobs.monitoring.health_check_job import health_check_task
 from jobs.recommendation.recommendation_job import RecommendationJob
 from jobs.quality.data_quality_job import DataQualityJob
-from jobs.tourism.tourism_sync_job import TourismSyncJob
+# from jobs.tourism.tourism_sync_job import TourismSyncJob  # 존재하지 않는 모듈
 from jobs.tourism.comprehensive_tourism_job import ComprehensiveTourismJob, IncrementalTourismJob
 from jobs.system_maintenance.database_backup_job import DatabaseBackupJob
 
@@ -156,10 +156,10 @@ class WeatherFlickBatchSystem:
             retry_attempts=2
         )
         
-        # 관광지 동기화 작업 함수 생성
+        # 관광지 동기화 작업 함수 생성 - 증분 업데이트 재사용
         def tourism_sync_task():
-            job = TourismSyncJob(tourism_config)
-            return job.run()
+            job = IncrementalTourismJob()
+            return job.execute()
         
         self.batch_manager.register_job(
             tourism_config,

@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from config.settings import get_api_config
+from app.core.multi_api_key_manager import get_api_key_manager, APIProvider
 from config.constants import (
     WEATHER_COORDINATES,
     OBSERVATION_STATIONS,
@@ -23,10 +24,14 @@ class WeatherDataCollector:
 
     def __init__(self):
         self.config = get_api_config()
-        self.kma_api_key = self.config.kma_api_key
         self.base_url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0"
         self.historical_url = "http://apis.data.go.kr/1360000/AsosHourlyInfoService"
         self.logger = get_logger(__name__)
+
+        # 다중 API 키 시스템 사용
+        self.key_manager = get_api_key_manager()
+        active_key = self.key_manager.get_active_key(APIProvider.KMA)
+        self.kma_api_key = active_key.key if active_key else self.config.kma_api_key
 
         if not self.kma_api_key:
             self.logger.warning("기상청 API 키가 설정되지 않았습니다.")

@@ -2,6 +2,7 @@
 한국관광공사 API 클라이언트 베이스 클래스
 
 API 요청 한도 처리, 오류 응답 파싱, 재시도 로직 등의 공통 기능을 제공합니다.
+다중 API 키 로테이션 지원으로 한도 초과 문제를 해결합니다.
 """
 
 import time
@@ -16,6 +17,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from .multi_api_key_manager import get_api_key_manager, APIProvider
+
 
 class APIErrorType(Enum):
     """API 오류 유형"""
@@ -28,12 +31,15 @@ class APIErrorType(Enum):
 
 
 class KTOAPIClient(ABC):
-    """한국관광공사 API 클라이언트 베이스 클래스"""
+    """한국관광공사 API 클라이언트 베이스 클래스 (다중 키 지원)"""
 
-    def __init__(self, api_key: str, base_url: str = None):
-        self.api_key = api_key
+    def __init__(self, api_key: str = None, base_url: str = None):
+        self.api_key = api_key  # 호환성을 위해 유지하지만 다중 키 매니저 우선 사용
         self.base_url = base_url or "http://apis.data.go.kr/B551011/KorService2"
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # 다중 API 키 매니저
+        self.key_manager = get_api_key_manager()
 
         # API 호출 제한 설정
         self.call_delay = 1.0  # 1초 간격 (보수적 설정)
@@ -145,9 +151,21 @@ class KTOAPIClient(ABC):
             self.logger.error(f"XML 오류 응답 처리 실패: {e}")
             return None
 
-    def _handle_rate_limit_exceeded(self):
-        """API 요청 한도 초과 시 처리"""
-        # 점진적 백오프 적용
+    def _handle_rate_limit_exceeded(self, current_key: str):
+        """API 요청 한도 초과 시 처리 (다중 키 지원)"""
+        # 현재 키에 대한 한도 초과 기록
+        self.key_manager.record_api_call(APIProvider.KTO, current_key, success=False, is_rate_limited=True)
+        
+        # 다음 키로 로테이션 시도
+        self.key_manager.rotate_to_next_key(APIProvider.KTO)
+        
+        # 다른 사용 가능한 키가 있는지 확인
+        next_key_info = self.key_manager.get_active_key(APIProvider.KTO)
+        if next_key_info and next_key_info.key != current_key:
+            self.logger.info(f"🔄 다른 KTO API 키로 전환합니다: {next_key_info.key[:10]}...")
+            return  # 바로 다른 키 사용
+            
+        # 모든 키가 한도 초과인 경우 대기
         base_delay = 60  # 기본 1분 대기
         self.rate_limit_count += 1
 
@@ -157,7 +175,7 @@ class KTOAPIClient(ABC):
             # 3번 이상 초과 시 더 긴 대기 (최대 5분)
             delay = min(300, base_delay + (self.rate_limit_count - 3) * 60)
 
-        self.logger.info(f"🕐 API 한도 초과로 {delay}초 대기합니다...")
+        self.logger.info(f"🕐 모든 KTO API 키 한도 초과로 {delay}초 대기합니다...")
         time.sleep(delay)
 
     def _log_api_key_help(self):
@@ -169,17 +187,22 @@ class KTOAPIClient(ABC):
         self.logger.info("2. 활용신청 후 승인된 인증키를 KTO_API_KEY 환경변수에 설정")
         self.logger.info("3. 신청한 서비스가 승인될 때까지 대기 (보통 1-2일 소요)")
 
-    def _is_api_key_valid(self) -> bool:
-        """API 키 유효성 검사"""
-        if (
-            not self.api_key
-            or self.api_key.strip() == ""
-            or "your_kto_api_key_here" in self.api_key
-        ):
-            self.logger.warning("한국관광공사 API 키가 설정되지 않았습니다.")
-            self._log_api_key_help()
-            return False
-        return True
+    def _get_current_api_key(self) -> Optional[str]:
+        """현재 사용할 API 키 반환 (다중 키 지원)"""
+        # 다중 키 매니저에서 사용 가능한 키 가져오기
+        key_info = self.key_manager.get_active_key(APIProvider.KTO)
+        if key_info:
+            return key_info.key
+            
+        # 폴백: 기존 단일 키 사용
+        if (self.api_key and 
+            self.api_key.strip() != "" and 
+            "your_kto_api_key_here" not in self.api_key):
+            return self.api_key
+            
+        self.logger.warning("사용 가능한 한국관광공사 API 키가 없습니다.")
+        self._log_api_key_help()
+        return None
 
     def make_request(
         self,
@@ -190,7 +213,9 @@ class KTOAPIClient(ABC):
     ) -> Optional[Dict]:
         """API 요청 수행 (재시도 로직 포함)"""
 
-        if not self._is_api_key_valid():
+        # 현재 사용할 API 키 가져오기
+        current_api_key = self._get_current_api_key()
+        if not current_api_key:
             return None
 
         if not self._wait_for_rate_limit():
@@ -199,7 +224,7 @@ class KTOAPIClient(ABC):
 
         # 기본 파라미터 설정
         default_params = {
-            "serviceKey": self.api_key,
+            "serviceKey": current_api_key,
             "MobileOS": "ETC",
             "MobileApp": "WeatherFlick",
             "_type": "json",
@@ -253,16 +278,20 @@ class KTOAPIClient(ABC):
                 self.logger.debug(f"응답 body가 비어있음: {endpoint}")
                 return None
 
-            # 성공 시 rate limit 카운터 초기화
+            # 성공 시 rate limit 카운터 초기화 및 키 사용량 기록
             self.rate_limit_count = 0
+            self.key_manager.record_api_call(APIProvider.KTO, current_api_key, success=True)
             return body
 
         except requests.exceptions.Timeout:
             self.logger.error(f"API 호출 타임아웃: {endpoint}")
+            self.key_manager.record_api_call(APIProvider.KTO, current_api_key, success=False)
         except requests.exceptions.RequestException as e:
             self.logger.error(f"API 호출 오류: {endpoint}, {str(e)}")
+            self.key_manager.record_api_call(APIProvider.KTO, current_api_key, success=False)
         except Exception as e:
             self.logger.error(f"예상치 못한 오류: {endpoint}, {str(e)}")
+            self.key_manager.record_api_call(APIProvider.KTO, current_api_key, success=False)
 
         # 재시도 로직
         if retry_count < max_retries:
