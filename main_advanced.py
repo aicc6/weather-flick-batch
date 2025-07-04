@@ -67,9 +67,13 @@ class WeatherFlickBatchSystem:
             retry_attempts=3
         )
         
+        # 비동기 작업을 동기 래퍼로 감싸기
+        def weather_update_sync():
+            return asyncio.run(weather_update_task())
+        
         self.batch_manager.register_job(
             weather_config,
-            weather_update_task,
+            weather_update_sync,
             trigger='interval',
             hours=1
         )
@@ -87,9 +91,13 @@ class WeatherFlickBatchSystem:
             dependencies=[]
         )
         
+        # 비동기 작업을 동기 래퍼로 감싸기
+        def destination_sync_sync():
+            return asyncio.run(destination_sync_task())
+        
         self.batch_manager.register_job(
             destination_config,
-            destination_sync_task,
+            destination_sync_sync,
             trigger='cron',
             hour=3,
             minute=0
@@ -109,7 +117,7 @@ class WeatherFlickBatchSystem:
         
         def comprehensive_tourism_task():
             job = ComprehensiveTourismJob()
-            return job.execute()
+            return asyncio.run(job.execute())
         
         self.batch_manager.register_job(
             comprehensive_tourism_config,
@@ -134,7 +142,7 @@ class WeatherFlickBatchSystem:
         
         def incremental_tourism_task():
             job = IncrementalTourismJob()
-            return job.execute()
+            return asyncio.run(job.execute())
         
         self.batch_manager.register_job(
             incremental_tourism_config,
@@ -159,7 +167,7 @@ class WeatherFlickBatchSystem:
         # 관광지 동기화 작업 함수 생성 - 증분 업데이트 재사용
         def tourism_sync_task():
             job = IncrementalTourismJob()
-            return job.execute()
+            return asyncio.run(job.execute())
         
         self.batch_manager.register_job(
             tourism_config,
@@ -187,9 +195,13 @@ class WeatherFlickBatchSystem:
             retry_attempts=2
         )
         
+        # 비동기 작업을 동기 래퍼로 감싸기
+        def log_cleanup_sync():
+            return asyncio.run(log_cleanup_task())
+        
         self.batch_manager.register_job(
             log_cleanup_config,
-            log_cleanup_task,
+            log_cleanup_sync,
             trigger='cron',
             hour=1,
             minute=0
@@ -210,6 +222,9 @@ class WeatherFlickBatchSystem:
         # 백업 작업 함수 생성
         def database_backup_task():
             job = DatabaseBackupJob(backup_config)
+            # DatabaseBackupJob.run()이 비동기인지 확인 필요
+            if asyncio.iscoroutinefunction(job.run):
+                return asyncio.run(job.run())
             return job.run()
         
         self.batch_manager.register_job(
@@ -239,9 +254,13 @@ class WeatherFlickBatchSystem:
             retry_attempts=1
         )
         
+        # 비동기 작업을 동기 래퍼로 감싸기
+        def health_check_sync():
+            return asyncio.run(health_check_task())
+        
         self.batch_manager.register_job(
             health_check_config,
-            health_check_task,
+            health_check_sync,
             trigger='interval',
             minutes=5
         )
@@ -269,6 +288,9 @@ class WeatherFlickBatchSystem:
         # 추천 작업 함수 생성
         def recommendation_task():
             job = RecommendationJob(recommendation_config)
+            # RecommendationJob.run()이 비동기인지 확인 필요
+            if asyncio.iscoroutinefunction(job.run):
+                return asyncio.run(job.run())
             return job.run()
         
         self.batch_manager.register_job(
@@ -302,6 +324,9 @@ class WeatherFlickBatchSystem:
         # 품질 검사 작업 함수 생성
         def quality_check_task():
             job = DataQualityJob(quality_config)
+            # DataQualityJob.run()이 비동기인지 확인 필요
+            if asyncio.iscoroutinefunction(job.run):
+                return asyncio.run(job.run())
             return job.run()
         
         self.batch_manager.register_job(
