@@ -28,9 +28,11 @@ class RedisClient:
                     self._client = redis.Redis(
                         host=self.settings.redis_host,
                         port=self.settings.redis_port,
-                        password=self.settings.redis_password
-                        if self.settings.redis_password
-                        else None,
+                        password=(
+                            self.settings.redis_password
+                            if self.settings.redis_password
+                            else None
+                        ),
                         db=self.settings.redis_db,
                         decode_responses=True,
                         socket_timeout=5,
@@ -43,9 +45,11 @@ class RedisClient:
                     self._client = redis.Redis(
                         host=self.settings.redis_host,
                         port=self.settings.redis_port,
-                        password=self.settings.redis_password
-                        if self.settings.redis_password
-                        else None,
+                        password=(
+                            self.settings.redis_password
+                            if self.settings.redis_password
+                            else None
+                        ),
                         db=self.settings.redis_db,
                         decode_responses=True,
                         socket_timeout=5,
@@ -57,7 +61,9 @@ class RedisClient:
                 self._client.ping()
                 self.logger.info("Redis 연결 성공")
             except Exception as e:
-                self.logger.warning(f"Redis 연결 실패: {e}. 캐시 기능 없이 계속 실행됩니다.")
+                self.logger.warning(
+                    f"Redis 연결 실패: {e}. 캐시 기능 없이 계속 실행됩니다."
+                )
                 self._connection_failed = True
                 self._client = None
 
@@ -70,7 +76,7 @@ class RedisClient:
             if not client:
                 self.logger.debug(f"Redis 클라이언트 없음, 캐시 저장 건너뜀: {key}")
                 return False
-                
+
             if isinstance(value, (dict, list)):
                 value = json.dumps(value, ensure_ascii=False)
 
@@ -88,7 +94,7 @@ class RedisClient:
             if not client:
                 self.logger.debug(f"Redis 클라이언트 없음, 캐시 조회 건너뜀: {key}")
                 return None
-                
+
             value = client.get(key)
 
             if value is None:
@@ -111,7 +117,7 @@ class RedisClient:
             if not client:
                 self.logger.debug(f"Redis 클라이언트 없음, 캐시 삭제 건너뜀: {key}")
                 return False
-                
+
             result = client.delete(key)
             self.logger.debug(f"캐시 삭제: {key}")
             return bool(result)
@@ -124,9 +130,11 @@ class RedisClient:
         try:
             client = self.get_client()
             if not client:
-                self.logger.debug(f"Redis 클라이언트 없음, 캐시 존재 확인 건너뜀: {key}")
+                self.logger.debug(
+                    f"Redis 클라이언트 없음, 캐시 존재 확인 건너뜀: {key}"
+                )
                 return False
-                
+
             return bool(client.exists(key))
         except Exception as e:
             self.logger.error(f"캐시 존재 확인 실패 [{key}]: {e}")
@@ -193,11 +201,11 @@ def test_redis_connection() -> bool:
     try:
         client = get_redis_client()
         redis_client = client.get_client()
-        
+
         if not redis_client:
             print("⚠️ Redis 연결을 사용할 수 없지만 시스템은 정상 작동합니다")
             return False
-            
+
         redis_client.ping()
         print("✅ Redis 연결 성공!")
 
@@ -218,4 +226,3 @@ def test_redis_connection() -> bool:
 if __name__ == "__main__":
     # 직접 실행시 연결 테스트
     test_redis_connection()
-

@@ -398,9 +398,7 @@ class NotificationManager:
         level = (
             AlertLevel.CRITICAL
             if quality_score < 50
-            else AlertLevel.ERROR
-            if quality_score < 70
-            else AlertLevel.WARNING
+            else AlertLevel.ERROR if quality_score < 70 else AlertLevel.WARNING
         )
 
         return self.send_alert(
@@ -426,4 +424,3 @@ def get_notification_manager() -> NotificationManager:
     if _notification_manager is None:
         _notification_manager = NotificationManager()
     return _notification_manager
-

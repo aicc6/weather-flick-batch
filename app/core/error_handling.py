@@ -266,9 +266,11 @@ class ExternalServiceError(WeatherFlickError):
     def __init__(self, message: str, service_name: str = "", **kwargs):
         super().__init__(
             message,
-            error_code=f"WF_EXT_{service_name.upper()}_ERROR"
-            if service_name
-            else "WF_EXT_ERROR",
+            error_code=(
+                f"WF_EXT_{service_name.upper()}_ERROR"
+                if service_name
+                else "WF_EXT_ERROR"
+            ),
             category=ErrorCategory.EXTERNAL_SERVICE_ERROR,
             **kwargs,
         )

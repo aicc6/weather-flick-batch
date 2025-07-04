@@ -33,7 +33,7 @@ class KTODataCollector:
         self.key_manager = get_api_key_manager()
         active_key = self.key_manager.get_active_key(APIProvider.KTO)
         self.api_key = active_key.key if active_key else None
-        
+
         if not self.api_key:
             self.logger.warning(
                 "KTO_API_KEY가 설정되지 않았습니다. 테스트 데이터를 생성합니다."

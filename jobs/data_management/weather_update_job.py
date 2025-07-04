@@ -57,9 +57,11 @@ class WeatherUpdateJob:
                     "processed_records": total_updated,
                     "total_regions": len(regions),
                     "failed_regions": failed_regions,
-                    "success_rate": (len(regions) - len(failed_regions)) / len(regions)
-                    if regions
-                    else 0,
+                    "success_rate": (
+                        (len(regions) - len(failed_regions)) / len(regions)
+                        if regions
+                        else 0
+                    ),
                 }
 
                 self.logger.info(f"날씨 데이터 업데이트 완료: {total_updated}건 처리")
@@ -138,7 +140,7 @@ class WeatherUpdateJob:
                 endpoint="weather",
                 params=params,
                 store_raw=True,  # 원본 데이터 저장
-                cache_ttl=900   # 15분 캐시
+                cache_ttl=900,  # 15분 캐시
             )
 
             if response.success:
@@ -170,7 +172,7 @@ class WeatherUpdateJob:
                 endpoint="forecast",
                 params=params,
                 store_raw=True,  # 원본 데이터 저장
-                cache_ttl=1800  # 30분 캐시
+                cache_ttl=1800,  # 30분 캐시
             )
 
             if response.success:
@@ -296,9 +298,7 @@ class WeatherUpdateJob:
             WHERE region_code = %s
             AND forecast_date < CURRENT_DATE - INTERVAL '7 days'
             """
-            self.db_manager.execute_update(
-                cleanup_query, (region_code,)
-            )
+            self.db_manager.execute_update(cleanup_query, (region_code,))
 
             # 새 예보 데이터 저장
             insert_query = """

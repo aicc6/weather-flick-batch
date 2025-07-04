@@ -412,4 +412,3 @@ class DatabaseBackupJob(BaseJob):
                 self.logger.warning(f"디스크 사용률 높음: {used_percent:.1f}%")
         except Exception:
             pass
-

@@ -120,10 +120,11 @@ class DataQualityJob(BaseJob):
                 "tables_checked": self.processed_tables,
                 "total_issues": total_issues,
                 "critical_issues": len(critical_issues),
-                "avg_quality_score": sum(r.quality_score for r in quality_results)
-                / len(quality_results)
-                if quality_results
-                else 0,
+                "avg_quality_score": (
+                    sum(r.quality_score for r in quality_results) / len(quality_results)
+                    if quality_results
+                    else 0
+                ),
             }
 
             self.logger.info(
@@ -492,4 +493,3 @@ class DataQualityJob(BaseJob):
                 self.logger.warning(
                     "전체 데이터 품질 점수가 낮습니다. 데이터 정리가 필요합니다."
                 )
-

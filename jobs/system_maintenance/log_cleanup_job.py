@@ -282,7 +282,9 @@ class LogCleanupJob:
     def _manage_log_partitions(self):
         """데이터베이스 로그 테이블 파티션 관리"""
         try:
-            from app.core.database_manager_extension import get_extended_database_manager
+            from app.core.database_manager_extension import (
+                get_extended_database_manager,
+            )
 
             db_manager = get_extended_database_manager()
 
@@ -298,9 +300,7 @@ class LogCleanupJob:
             """
 
             partition_name = f"system_logs_{cutoff_date.strftime('%Y_%m')}"
-            old_partitions = db_manager.db_manager.fetch_all(
-                query, (partition_name,)
-            )
+            old_partitions = db_manager.db_manager.fetch_all(query, (partition_name,))
 
             for partition in old_partitions:
                 drop_query = f"DROP TABLE IF EXISTS {partition['tablename']}"

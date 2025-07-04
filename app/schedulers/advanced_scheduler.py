@@ -247,9 +247,11 @@ class BatchJobManager:
                 start_time=start_time,
                 end_time=datetime.now(),
                 status=JobStatus.SUCCESS,
-                processed_records=result.get("processed_records", 0)
-                if isinstance(result, dict)
-                else 0,
+                processed_records=(
+                    result.get("processed_records", 0)
+                    if isinstance(result, dict)
+                    else 0
+                ),
                 metadata=result if isinstance(result, dict) else {},
             )
 
@@ -403,9 +405,9 @@ class BatchJobManager:
                 return {
                     "job_id": job.id,
                     "name": job.name,
-                    "next_run": job.next_run_time.isoformat()
-                    if job.next_run_time
-                    else None,
+                    "next_run": (
+                        job.next_run_time.isoformat() if job.next_run_time else None
+                    ),
                     "last_result": self.job_results.get(job_id),
                 }
             else:
@@ -428,9 +430,9 @@ class BatchJobManager:
                 for job in self.scheduler.get_jobs():
                     jobs_status[job.id] = {
                         "name": job.name,
-                        "next_run": job.next_run_time.isoformat()
-                        if job.next_run_time
-                        else None,
+                        "next_run": (
+                            job.next_run_time.isoformat() if job.next_run_time else None
+                        ),
                         "last_result": self.job_results.get(job.id),
                     }
             else:
@@ -539,4 +541,3 @@ def get_all_job_status() -> Dict[str, Any]:
     """전체 작업 상태 조회 편의 함수"""
     manager = get_batch_manager()
     return manager.get_job_status()
-

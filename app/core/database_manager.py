@@ -159,10 +159,12 @@ class SyncDatabaseManager(BaseDatabaseManager):
         try:
             # params가 있으면 복잡한 객체들을 직렬화
             if params:
-                processed_params = tuple(self.serialize_for_db(param) for param in params)
+                processed_params = tuple(
+                    self.serialize_for_db(param) for param in params
+                )
             else:
                 processed_params = params
-            
+
             with self.get_cursor() as cursor:
                 cursor.execute(query, processed_params)
                 return cursor.rowcount
@@ -179,9 +181,11 @@ class SyncDatabaseManager(BaseDatabaseManager):
             # params_list의 각 tuple의 복잡한 객체들을 직렬화
             processed_params_list = []
             for params in params_list:
-                processed_params = tuple(self.serialize_for_db(param) for param in params)
+                processed_params = tuple(
+                    self.serialize_for_db(param) for param in params
+                )
                 processed_params_list.append(processed_params)
-            
+
             with self.get_cursor() as cursor:
                 cursor.executemany(query, processed_params_list)
                 return cursor.rowcount
@@ -525,10 +529,12 @@ class AsyncDatabaseManager(BaseDatabaseManager):
         try:
             # params가 있으면 복잡한 객체들을 직렬화
             if params:
-                processed_params = tuple(self.serialize_for_db(param) for param in params)
+                processed_params = tuple(
+                    self.serialize_for_db(param) for param in params
+                )
             else:
                 processed_params = params
-            
+
             async with self.get_connection() as connection:
                 if processed_params:
                     result = await connection.execute(query, *processed_params)
@@ -549,9 +555,11 @@ class AsyncDatabaseManager(BaseDatabaseManager):
             # params_list의 각 tuple의 복잡한 객체들을 직렬화
             processed_params_list = []
             for params in params_list:
-                processed_params = tuple(self.serialize_for_db(param) for param in params)
+                processed_params = tuple(
+                    self.serialize_for_db(param) for param in params
+                )
                 processed_params_list.append(processed_params)
-            
+
             async with self.get_connection() as connection:
                 await connection.executemany(query, processed_params_list)
                 return len(processed_params_list)  # asyncpg는 rowcount를 반환하지 않음

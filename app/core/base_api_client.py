@@ -37,7 +37,7 @@ class KTOAPIClient(ABC):
         self.api_key = api_key  # 호환성을 위해 유지하지만 다중 키 매니저 우선 사용
         self.base_url = base_url or "http://apis.data.go.kr/B551011/KorService2"
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
         # 다중 API 키 매니저
         self.key_manager = get_api_key_manager()
 
@@ -154,17 +154,21 @@ class KTOAPIClient(ABC):
     def _handle_rate_limit_exceeded(self, current_key: str):
         """API 요청 한도 초과 시 처리 (다중 키 지원)"""
         # 현재 키에 대한 한도 초과 기록
-        self.key_manager.record_api_call(APIProvider.KTO, current_key, success=False, is_rate_limited=True)
-        
+        self.key_manager.record_api_call(
+            APIProvider.KTO, current_key, success=False, is_rate_limited=True
+        )
+
         # 다음 키로 로테이션 시도
         self.key_manager.rotate_to_next_key(APIProvider.KTO)
-        
+
         # 다른 사용 가능한 키가 있는지 확인
         next_key_info = self.key_manager.get_active_key(APIProvider.KTO)
         if next_key_info and next_key_info.key != current_key:
-            self.logger.info(f"🔄 다른 KTO API 키로 전환합니다: {next_key_info.key[:10]}...")
+            self.logger.info(
+                f"🔄 다른 KTO API 키로 전환합니다: {next_key_info.key[:10]}..."
+            )
             return  # 바로 다른 키 사용
-            
+
         # 모든 키가 한도 초과인 경우 대기
         base_delay = 60  # 기본 1분 대기
         self.rate_limit_count += 1
@@ -193,13 +197,15 @@ class KTOAPIClient(ABC):
         key_info = self.key_manager.get_active_key(APIProvider.KTO)
         if key_info:
             return key_info.key
-            
+
         # 폴백: 기존 단일 키 사용
-        if (self.api_key and 
-            self.api_key.strip() != "" and 
-            "your_kto_api_key_here" not in self.api_key):
+        if (
+            self.api_key
+            and self.api_key.strip() != ""
+            and "your_kto_api_key_here" not in self.api_key
+        ):
             return self.api_key
-            
+
         self.logger.warning("사용 가능한 한국관광공사 API 키가 없습니다.")
         self._log_api_key_help()
         return None
@@ -280,18 +286,26 @@ class KTOAPIClient(ABC):
 
             # 성공 시 rate limit 카운터 초기화 및 키 사용량 기록
             self.rate_limit_count = 0
-            self.key_manager.record_api_call(APIProvider.KTO, current_api_key, success=True)
+            self.key_manager.record_api_call(
+                APIProvider.KTO, current_api_key, success=True
+            )
             return body
 
         except requests.exceptions.Timeout:
             self.logger.error(f"API 호출 타임아웃: {endpoint}")
-            self.key_manager.record_api_call(APIProvider.KTO, current_api_key, success=False)
+            self.key_manager.record_api_call(
+                APIProvider.KTO, current_api_key, success=False
+            )
         except requests.exceptions.RequestException as e:
             self.logger.error(f"API 호출 오류: {endpoint}, {str(e)}")
-            self.key_manager.record_api_call(APIProvider.KTO, current_api_key, success=False)
+            self.key_manager.record_api_call(
+                APIProvider.KTO, current_api_key, success=False
+            )
         except Exception as e:
             self.logger.error(f"예상치 못한 오류: {endpoint}, {str(e)}")
-            self.key_manager.record_api_call(APIProvider.KTO, current_api_key, success=False)
+            self.key_manager.record_api_call(
+                APIProvider.KTO, current_api_key, success=False
+            )
 
         # 재시도 로직
         if retry_count < max_retries:

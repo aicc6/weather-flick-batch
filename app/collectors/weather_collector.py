@@ -345,13 +345,15 @@ class WeatherDataCollector:
                 "avg_temp": sum(temps) / len(temps),
                 "max_temp": max(temps),
                 "min_temp": min(temps),
-                "humidity": sum(humidity_values) / len(humidity_values)
-                if humidity_values
-                else None,
+                "humidity": (
+                    sum(humidity_values) / len(humidity_values)
+                    if humidity_values
+                    else None
+                ),
                 "precipitation": precipitation,
-                "wind_speed": sum(wind_speeds) / len(wind_speeds)
-                if wind_speeds
-                else None,
+                "wind_speed": (
+                    sum(wind_speeds) / len(wind_speeds) if wind_speeds else None
+                ),
             }
         except Exception as e:
             self.logger.warning(f"과거 데이터 통계 계산 오류: {e}")

@@ -33,8 +33,12 @@ from jobs.system_maintenance.log_cleanup_job import log_cleanup_task
 from jobs.monitoring.health_check_job import health_check_task
 from jobs.recommendation.recommendation_job import RecommendationJob
 from jobs.quality.data_quality_job import DataQualityJob
+
 # from jobs.tourism.tourism_sync_job import TourismSyncJob  # 존재하지 않는 모듈
-from jobs.tourism.comprehensive_tourism_job import ComprehensiveTourismJob, IncrementalTourismJob
+from jobs.tourism.comprehensive_tourism_job import (
+    ComprehensiveTourismJob,
+    IncrementalTourismJob,
+)
 from jobs.system_maintenance.database_backup_job import DatabaseBackupJob
 
 
@@ -390,4 +394,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

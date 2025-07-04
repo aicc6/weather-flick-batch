@@ -195,9 +195,11 @@ class BaseJob(ABC):
             notification_manager = get_notification_manager()
 
             metadata = {
-                "job_type": self.config.job_type.value
-                if hasattr(self.config.job_type, "value")
-                else str(self.config.job_type),
+                "job_type": (
+                    self.config.job_type.value
+                    if hasattr(self.config.job_type, "value")
+                    else str(self.config.job_type)
+                ),
                 "duration_seconds": result.duration_seconds,
                 "processed_records": result.processed_records,
             }
@@ -232,9 +234,11 @@ class BaseJob(ABC):
 
                 metadata = {
                     "job_name": self.config.job_name,
-                    "job_type": self.config.job_type.value
-                    if hasattr(self.config.job_type, "value")
-                    else str(self.config.job_type),
+                    "job_type": (
+                        self.config.job_type.value
+                        if hasattr(self.config.job_type, "value")
+                        else str(self.config.job_type)
+                    ),
                     "processed_records": result.processed_records,
                     "duration_seconds": result.duration_seconds,
                 }

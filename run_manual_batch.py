@@ -15,14 +15,17 @@ os.chdir(project_root)
 
 # 환경 변수 로드
 from dotenv import load_dotenv
+
 load_dotenv()
 
 # 스크립트 경로 추가
 sys.path.insert(0, str(project_root))
 
+
 def show_usage():
     """사용법 출력"""
-    print("""
+    print(
+        """
 🚀 WeatherFlick 수동 배치 실행 도구
 
 사용 가능한 명령어:
@@ -39,39 +42,41 @@ def show_usage():
   - incremental-tourism: 증분 관광정보 수집
   - health: 시스템 헬스체크
   - backup: 데이터베이스 백업
-    """)
+    """
+    )
+
 
 def test_multi_key_system():
     """다중 API 키 시스템 테스트"""
     print("🔧 다중 API 키 시스템 테스트")
-    
+
     from app.core.multi_api_key_manager import get_api_key_manager, APIProvider
     from app.core.base_api_client import KTOAPIClient
-    
+
     # 키 매니저 상태
     manager = get_api_key_manager()
     stats = manager.get_usage_stats()
-    
+
     print(f"📊 총 키 개수: {stats['total_keys']}")
     print(f"🔑 활성 키 개수: {stats['active_keys']}")
-    
-    for provider, data in stats['providers'].items():
+
+    for provider, data in stats["providers"].items():
         print(f"\n[{provider}]")
         print(f"  총 키: {data['total_keys']}개")
         print(f"  활성 키: {data['active_keys']}개")
         print(f"  총 사용량: {data['total_usage']}/{data['total_limit']}")
-    
+
     # API 호출 테스트
     class TestClient(KTOAPIClient):
         def get_request_stats(self):
             return {}
-    
+
     try:
         client = TestClient()
         key = client._get_current_api_key()
         if key:
             print(f"\n🔑 활성 키: {key[:10]}...")
-            result = client.make_request('areaCode2', {'areaCode': '1', 'numOfRows': 1})
+            result = client.make_request("areaCode2", {"areaCode": "1", "numOfRows": 1})
             if result:
                 print("✅ API 호출 성공")
             else:
@@ -81,13 +86,14 @@ def test_multi_key_system():
     except Exception as e:
         print(f"❌ 테스트 오류: {e}")
 
+
 def main():
     if len(sys.argv) < 2:
         show_usage()
         return
-    
+
     command = sys.argv[1]
-    
+
     if command == "test":
         test_multi_key_system()
     elif command == "list":
@@ -102,6 +108,7 @@ def main():
         os.system("python scripts/run_batch.py run-all")
     else:
         show_usage()
+
 
 if __name__ == "__main__":
     main()

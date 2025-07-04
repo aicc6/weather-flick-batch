@@ -131,4 +131,3 @@ DATE_FORMATS = {
     "log_datetime": "%Y-%m-%d %H:%M:%S",
     "file_datetime": "%Y%m%d_%H%M%S",
 }
-

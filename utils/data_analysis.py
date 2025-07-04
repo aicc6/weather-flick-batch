@@ -158,11 +158,11 @@ class KTODataAnalyzer:
                     "시작일": event.get("eventstartdate", "N/A"),
                     "종료일": event.get("eventenddate", "N/A"),
                     "주소": event.get("addr1", "N/A"),
-                    "상태": "진행중"
-                    if event in current_events
-                    else "예정"
-                    if event in upcoming_events
-                    else "종료",
+                    "상태": (
+                        "진행중"
+                        if event in current_events
+                        else "예정" if event in upcoming_events else "종료"
+                    ),
                 }
                 for event in self.festivals_events
             ],
@@ -326,4 +326,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -274,4 +274,3 @@ def get_notification_settings() -> NotificationSettings:
         sms_api_key=os.getenv("SMS_API_KEY", ""),
         admin_phones=admin_phones,
     )
-

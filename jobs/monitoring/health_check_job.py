@@ -92,14 +92,14 @@ class SystemHealthChecker:
                 health_results["external_apis"] = await self._check_external_apis()
 
                 # 4. 서버 리소스 사용률 체크
-                health_results[
-                    "server_resources"
-                ] = await self._check_server_resources()
+                health_results["server_resources"] = (
+                    await self._check_server_resources()
+                )
 
                 # 5. 애플리케이션 응답 시간 체크
-                health_results[
-                    "app_response_time"
-                ] = await self._check_app_response_time()
+                health_results["app_response_time"] = (
+                    await self._check_app_response_time()
+                )
 
                 # 6. 배치 작업 상태 체크
                 health_results["batch_jobs"] = await self._check_batch_jobs_health()
@@ -231,9 +231,9 @@ class SystemHealthChecker:
                 message=message,
                 details={
                     "used_memory_mb": round(used_memory / 1024 / 1024, 2),
-                    "max_memory_mb": round(max_memory / 1024 / 1024, 2)
-                    if max_memory > 0
-                    else None,
+                    "max_memory_mb": (
+                        round(max_memory / 1024 / 1024, 2) if max_memory > 0 else None
+                    ),
                     "memory_usage_percent": round(memory_usage * 100, 1),
                     "connected_clients": info.get("connected_clients", 0),
                 },
@@ -483,9 +483,11 @@ class SystemHealthChecker:
                     "total_jobs_24h": len(recent_jobs),
                     "failed_jobs_24h": len(failed_jobs),
                     "success_rate_percent": round(success_rate * 100, 1),
-                    "last_job_time": recent_jobs[0]["start_time"].isoformat()
-                    if recent_jobs
-                    else None,
+                    "last_job_time": (
+                        recent_jobs[0]["start_time"].isoformat()
+                        if recent_jobs
+                        else None
+                    ),
                 },
             )
 
@@ -554,4 +556,3 @@ async def health_check_task() -> Dict[str, Any]:
     """헬스체크 작업 실행 함수"""
     checker = SystemHealthChecker()
     return await checker.execute()
-
