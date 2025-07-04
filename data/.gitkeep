@@ -1,0 +1,31 @@
+# Weather Flick Batch Data Directory
+
+이 디렉토리는 Weather Flick 배치 시스템의 데이터를 저장합니다.
+
+## 구조
+
+```
+data/
+├── raw/                     # 원본 API 응답 데이터
+│   ├── kto/                # KTO API 데이터
+│   ├── kma/                # KMA API 데이터  
+│   ├── google/             # Google API 데이터
+│   └── naver/              # Naver API 데이터
+├── processed/              # 가공된 데이터
+│   ├── normalized/         # 표준화된 데이터
+│   └── validated/          # 검증된 데이터
+│       ├── quality_passed/ # 품질 검사 통과
+│       └── quality_failed/ # 품질 검사 실패
+├── cache/                  # 캐시 데이터
+│   ├── redis_backup/       # Redis 백업
+│   └── temp_processing/    # 임시 처리 파일
+└── archive/                # 아카이브
+    ├── 2025-07/           # 월별 아카이브
+    └── compressed/         # 압축 파일
+```
+
+## 주의사항
+
+- 원본 데이터는 정기적으로 아카이브됩니다
+- 민감한 정보가 포함될 수 있으므로 .gitignore에 추가되어 있습니다
+- 디스크 용량을 주기적으로 모니터링하세요

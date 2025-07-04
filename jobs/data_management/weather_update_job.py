@@ -7,11 +7,11 @@
 
 from datetime import datetime
 from typing import Dict, List, Any, Optional
-import aiohttp
 
 from app.core.logger import get_logger
 from config.settings import get_weather_api_settings
-from app.core.database_manager import DatabaseManager
+from app.core.database_manager_extension import get_extended_database_manager
+from app.core.unified_api_client import get_unified_api_client, APIProvider
 
 
 class WeatherUpdateJob:
@@ -20,27 +20,14 @@ class WeatherUpdateJob:
     def __init__(self):
         self.logger = get_logger(__name__)
         self.settings = get_weather_api_settings()
-        self.db_manager = DatabaseManager()
-        self.session: Optional[aiohttp.ClientSession] = None
-
-    async def __aenter__(self):
-        """비동기 컨텍스트 매니저 진입"""
-        self.session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=30),
-            connector=aiohttp.TCPConnector(limit=20),
-        )
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """비동기 컨텍스트 매니저 종료"""
-        if self.session:
-            await self.session.close()
+        self.db_manager = get_extended_database_manager()
+        self.unified_client = get_unified_api_client()
 
     async def execute(self) -> Dict[str, Any]:
-        """날씨 데이터 업데이트 실행"""
-        self.logger.info("날씨 데이터 업데이트 작업 시작")
+        """날씨 데이터 업데이트 실행 (통합 API 클라이언트 사용)"""
+        self.logger.info("날씨 데이터 업데이트 작업 시작 (통합 구조)")
 
-        async with self:
+        async with self.unified_client:
             try:
                 # 1. 활성화된 모든 지역 조회
                 regions = await self._get_active_regions()
@@ -135,24 +122,29 @@ class WeatherUpdateJob:
     async def _fetch_current_weather(
         self, lat: float, lon: float
     ) -> Optional[Dict[str, Any]]:
-        """현재 날씨 정보 수집"""
+        """현재 날씨 정보 수집 (통합 API 클라이언트 사용)"""
         try:
-            url = f"{self.settings.weather_api_base_url}/weather"
             params = {
                 "lat": lat,
                 "lon": lon,
-                "appid": self.settings.weather_api_key,
                 "units": "metric",
                 "lang": "kr",
             }
 
-            async with self.session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return self._parse_current_weather(data)
-                else:
-                    self.logger.warning(f"날씨 API 호출 실패: {response.status}")
-                    return None
+            # 통합 API 클라이언트로 호출
+            response = await self.unified_client.call_api(
+                api_provider=APIProvider.WEATHER,
+                endpoint="weather",
+                params=params,
+                store_raw=True,  # 원본 데이터 저장
+                cache_ttl=900   # 15분 캐시
+            )
+
+            if response.success:
+                return self._parse_current_weather(response.data)
+            else:
+                self.logger.warning(f"날씨 API 호출 실패: {response.error}")
+                return None
 
         except Exception as e:
             self.logger.error(f"현재 날씨 수집 실패: {e}")
@@ -161,25 +153,30 @@ class WeatherUpdateJob:
     async def _fetch_weather_forecast(
         self, lat: float, lon: float, days: int = 7
     ) -> Optional[List[Dict[str, Any]]]:
-        """날씨 예보 정보 수집"""
+        """날씨 예보 정보 수집 (통합 API 클라이언트 사용)"""
         try:
-            url = f"{self.settings.weather_api_base_url}/forecast"
             params = {
                 "lat": lat,
                 "lon": lon,
-                "appid": self.settings.weather_api_key,
                 "units": "metric",
                 "lang": "kr",
                 "cnt": days * 8,  # 3시간 간격으로 하루 8개
             }
 
-            async with self.session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return self._parse_weather_forecast(data)
-                else:
-                    self.logger.warning(f"예보 API 호출 실패: {response.status}")
-                    return None
+            # 통합 API 클라이언트로 호출
+            response = await self.unified_client.call_api(
+                api_provider=APIProvider.WEATHER,
+                endpoint="forecast",
+                params=params,
+                store_raw=True,  # 원본 데이터 저장
+                cache_ttl=1800  # 30분 캐시
+            )
+
+            if response.success:
+                return self._parse_weather_forecast(response.data)
+            else:
+                self.logger.warning(f"예보 API 호출 실패: {response.error}")
+                return None
 
         except Exception as e:
             self.logger.error(f"날씨 예보 수집 실패: {e}")

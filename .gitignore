@@ -44,10 +44,13 @@ logs/*.log
 logs/*.log.*
 *.log
 
-# Data
-data/raw/*
-data/processed/*
+# Data - 새로운 구조 반영
+data/raw/*/*
+data/processed/*/*
 data/exports/*
+data/cache/*/*
+data/archive/*/*
+!data/.gitkeep
 !data/raw/__init__.py
 !data/processed/__init__.py
 !data/exports/__init__.py

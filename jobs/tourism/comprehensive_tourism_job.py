@@ -15,9 +15,9 @@ from typing import Dict
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from app.core.base_job import BaseJob, JobConfig
-from app.collectors.kto_api import KTODataCollector
-from app.processors.tourism_data_processor import TourismDataProcessor
-from app.core.database_manager import DatabaseManager
+from app.collectors.unified_kto_client import get_unified_kto_client
+from app.processors.data_transformation_pipeline import get_transformation_pipeline
+from app.core.database_manager_extension import get_extended_database_manager
 
 
 class ComprehensiveTourismJob(BaseJob):
@@ -41,89 +41,74 @@ class ComprehensiveTourismJob(BaseJob):
         self.job_name = "comprehensive_tourism_sync"
         self.job_type = "comprehensive_tourism_sync"
 
-        # 데이터 수집기 및 처리기 초기화
-        self.collector = KTODataCollector()
-        self.processor = TourismDataProcessor()
-        self.db_manager = DatabaseManager()
+        # 통합 구조 초기화
+        self.unified_client = get_unified_kto_client()
+        self.transformation_pipeline = get_transformation_pipeline()
+        self.db_manager = get_extended_database_manager()
 
         self.logger.info("종합 관광정보 수집 작업 초기화 완료")
 
-    def execute(self) -> bool:
-        """작업 실행"""
+    async def execute(self) -> bool:
+        """작업 실행 (비동기)"""
         try:
             self.logger.info("=== 종합 관광정보 수집 작업 시작 ===")
             start_time = time.time()
 
-            # 1. 종합 데이터 수집
-            self.logger.info("1단계: 종합 관광 데이터 수집")
+            # 1. 통합 KTO 데이터 수집 (새 구조 사용)
+            self.logger.info("1단계: 통합 KTO API를 통한 종합 데이터 수집")
             try:
-                comprehensive_data = self.collector.collect_comprehensive_data()
-
-                # API 실패 시 샘플 데이터 사용
-                if not comprehensive_data or all(
-                    not data for data in comprehensive_data.values()
-                ):
-                    self.logger.warning("API 데이터 수집 실패, 샘플 데이터로 전환")
-                    sample_area_codes, sample_attractions, sample_festivals = (
-                        self.collector.generate_sample_data()
-                    )
-                    comprehensive_data = {
-                        "area_codes": sample_area_codes,
-                        "detailed_area_codes": [],
-                        "category_codes": [],
-                        "tourist_attractions": sample_attractions,
-                        "cultural_facilities": [],
-                        "festivals_events": sample_festivals,
-                        "travel_courses": [],
-                        "leisure_sports": [],
-                        "accommodations": [],
-                        "shopping": [],
-                        "restaurants": [],
-                    }
-
-            except Exception as e:
-                self.logger.error(f"데이터 수집 중 오류: {e}")
-                self.logger.info("샘플 데이터로 전환합니다")
-                sample_area_codes, sample_attractions, sample_festivals = (
-                    self.collector.generate_sample_data()
+                # 새로운 통합 구조로 모든 데이터 수집
+                collection_result = await self.unified_client.collect_all_data(
+                    content_types=None,  # 모든 컨텐츠 타입
+                    area_codes=None,     # 모든 지역
+                    store_raw=True,      # 원본 데이터 저장
+                    auto_transform=True  # 자동 변환 수행
                 )
+                
+                self.logger.info(f"수집 완료: 원본 {collection_result['total_raw_records']}건, 처리 {collection_result['total_processed_records']}건")
+                
+                # 수집 결과를 기존 형태로 변환 (호환성)
                 comprehensive_data = {
-                    "area_codes": sample_area_codes,
-                    "detailed_area_codes": [],
-                    "category_codes": [],
-                    "tourist_attractions": sample_attractions,
-                    "cultural_facilities": [],
-                    "festivals_events": sample_festivals,
-                    "travel_courses": [],
-                    "leisure_sports": [],
-                    "accommodations": [],
-                    "shopping": [],
-                    "restaurants": [],
+                    "total_raw_records": collection_result['total_raw_records'],
+                    "total_processed_records": collection_result['total_processed_records'],
+                    "content_types_collected": collection_result['content_types_collected'],
+                    "sync_batch_id": collection_result['sync_batch_id']
                 }
 
-            # 2. 수집된 데이터 통계
-            total_collected = sum(
-                len(data) for data in comprehensive_data.values() if data
-            )
-            self.logger.info(f"총 수집된 데이터: {total_collected:,}개")
+            except Exception as e:
+                self.logger.error(f"통합 데이터 수집 중 오류: {e}")
+                # 기본 통계 설정
+                comprehensive_data = {
+                    "total_raw_records": 0,
+                    "total_processed_records": 0,
+                    "content_types_collected": {},
+                    "sync_batch_id": f"fallback_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                }
 
-            for data_type, data_list in comprehensive_data.items():
-                if data_list:
-                    self.logger.info(f"  - {data_type}: {len(data_list):,}개")
+            # 2. 수집된 데이터 통계 (새 구조)
+            total_collected = comprehensive_data.get('total_raw_records', 0)
+            total_processed = comprehensive_data.get('total_processed_records', 0)
+            
+            self.logger.info(f"원본 데이터 수집: {total_collected:,}개")
+            self.logger.info(f"처리된 데이터: {total_processed:,}개")
+            
+            # 컨텐츠 타입별 통계
+            for content_type, content_result in comprehensive_data.get('content_types_collected', {}).items():
+                raw_count = content_result.get('total_raw_records', 0)
+                processed_count = content_result.get('total_processed_records', 0)
+                content_name = content_result.get('content_name', f'content_{content_type}')
+                self.logger.info(f"  - {content_name}: 원본 {raw_count}개, 처리 {processed_count}개")
 
-            # 3. 데이터베이스 처리
-            self.logger.info("2단계: 데이터베이스 저장 처리")
-            processing_results = self.processor.process_comprehensive_data(
-                comprehensive_data
-            )
-
-            # 4. 처리 결과 통계
-            total_processed = sum(processing_results.values())
-            self.logger.info(f"총 처리된 데이터: {total_processed:,}개")
-
-            for data_type, count in processing_results.items():
-                if count > 0:
-                    self.logger.info(f"  - {data_type}: {count:,}개 저장 완료")
+            # 3. 데이터 처리 결과 (통합 구조에서 자동 처리됨)
+            self.logger.info("2단계: 데이터 처리 완료 (통합 파이프라인에서 자동 처리)")
+            
+            # 처리 결과 통계 (이미 처리된 데이터)
+            processing_results = {
+                'total_processed': total_processed,
+                'batch_id': comprehensive_data.get('sync_batch_id')
+            }
+            
+            self.logger.info(f"데이터베이스 저장 완료: {total_processed:,}개")
 
             # 5. 데이터 품질 검사
             self.logger.info("3단계: 데이터 품질 검사")
@@ -133,15 +118,17 @@ class ComprehensiveTourismJob(BaseJob):
             execution_time = time.time() - start_time
             self.logger.info(f"총 실행 시간: {execution_time:.2f}초")
 
-            # 7. 작업 로그 저장
+            # 7. 작업 로그 저장 (새 구조)
             self._save_job_log(
                 status="completed",
                 processed_records=total_processed,
                 execution_time=execution_time,
                 additional_info={
-                    "collected_count": total_collected,
+                    "raw_records_count": total_collected,
+                    "processed_records_count": total_processed,
                     "processing_results": processing_results,
                     "quality_results": quality_results,
+                    "sync_batch_id": comprehensive_data.get('sync_batch_id')
                 },
             )
 
@@ -287,68 +274,60 @@ class IncrementalTourismJob(BaseJob):
         self.job_name = "incremental_tourism_sync"
         self.job_type = "tourist_data"
 
-        self.collector = KTODataCollector()
-        self.processor = TourismDataProcessor()
-        self.db_manager = DatabaseManager()
+        # 통합 구조 사용
+        self.unified_client = get_unified_kto_client()
+        self.transformation_pipeline = get_transformation_pipeline()
+        self.db_manager = get_extended_database_manager()
 
-    def execute(self) -> bool:
-        """증분 수집 실행 (주요 데이터만)"""
+    async def execute(self) -> bool:
+        """증분 수집 실행 (주요 데이터만) - 비동기"""
         try:
             self.logger.info("=== 증분 관광정보 수집 작업 시작 ===")
 
             # 주요 지역만 대상으로 증분 수집
             major_areas = ["1", "6", "31", "39"]  # 서울, 부산, 경기, 제주
 
-            # 1. 축제/행사 정보 (현재 진행중인 것들)
+            # 1. 통합 축제/행사 정보 수집 (새 구조)
             current_date = datetime.now().strftime("%Y%m%d")
+            processed_festivals = 0
+            
             try:
-                festivals = self.collector.get_festivals_events(
-                    event_start_date=current_date
+                # 축제/행사 컨텐츠 타입만 수집
+                festival_result = await self.unified_client.collect_all_data(
+                    content_types=['15'],  # 축제공연행사
+                    area_codes=major_areas,
+                    store_raw=True,
+                    auto_transform=True
                 )
-
-                if festivals:
-                    processed_festivals = self.processor.process_festivals_events(
-                        festivals
-                    )
-                    self.logger.info(f"축제/행사 정보 {processed_festivals}개 업데이트")
-                else:
-                    self.logger.warning("축제/행사 데이터 없음, 샘플 데이터 사용")
-                    _, _, sample_festivals = self.collector.generate_sample_data()
-                    processed_festivals = self.processor.process_festivals_events(
-                        sample_festivals
-                    )
-                    self.logger.info(
-                        f"샘플 축제/행사 정보 {processed_festivals}개 저장"
-                    )
+                
+                processed_festivals = festival_result.get('total_processed_records', 0)
+                self.logger.info(f"축제/행사 정보 {processed_festivals}개 업데이트")
+                
             except Exception as e:
                 self.logger.error(f"축제/행사 정보 수집 오류: {e}")
-                _, _, sample_festivals = self.collector.generate_sample_data()
-                processed_festivals = self.processor.process_festivals_events(
-                    sample_festivals
-                )
-                self.logger.info(f"샘플 축제/행사 정보 {processed_festivals}개 저장")
+                processed_festivals = 0
 
-            # 2. 주요 지역 관광지 정보 업데이트
+            # 2. 주요 지역 관광지 정보 업데이트 (새 구조)
             total_attractions = 0
-            for area_code in major_areas:
-                try:
-                    attractions = self.collector.get_tourist_attractions(
-                        area_code=area_code
-                    )
-                    if attractions:
-                        processed = self.processor.process_tourist_attractions(
-                            attractions
-                        )
-                        total_attractions += processed
-                    time.sleep(0.5)  # API 호출 간격 조절
-                except Exception as e:
-                    self.logger.warning(f"지역 {area_code} 관광지 정보 수집 실패: {e}")
-                    continue
-
-            self.logger.info(f"관광지 정보 {total_attractions}개 업데이트")
+            
+            try:
+                # 관광지 컨텐츠 타입만 수집
+                attraction_result = await self.unified_client.collect_all_data(
+                    content_types=['12'],  # 관광지
+                    area_codes=major_areas,
+                    store_raw=True,
+                    auto_transform=True
+                )
+                
+                total_attractions = attraction_result.get('total_processed_records', 0)
+                self.logger.info(f"관광지 정보 {total_attractions}개 업데이트")
+                
+            except Exception as e:
+                self.logger.error(f"관광지 정보 수집 오류: {e}")
+                total_attractions = 0
 
             # 3. 작업 로그 저장
-            total_processed = len(festivals) + total_attractions
+            total_processed = processed_festivals + total_attractions
             self._save_job_log("completed", total_processed)
 
             self.logger.info("=== 증분 관광정보 수집 작업 완료 ===")
@@ -390,14 +369,20 @@ class IncrementalTourismJob(BaseJob):
 
 
 if __name__ == "__main__":
-    # 종합 수집 작업 테스트
-    print("=== 종합 관광정보 수집 작업 테스트 ===")
-    comprehensive_job = ComprehensiveTourismJob()
-    success = comprehensive_job.execute()
-    print(f"작업 결과: {'성공' if success else '실패'}")
+    import asyncio
+    
+    async def test_jobs():
+        # 종합 수집 작업 테스트
+        print("=== 종합 관광정보 수집 작업 테스트 ===")
+        comprehensive_job = ComprehensiveTourismJob()
+        success = await comprehensive_job.execute()
+        print(f"작업 결과: {'성공' if success else '실패'}")
 
-    print("\n=== 증분 수집 작업 테스트 ===")
-    incremental_job = IncrementalTourismJob()
-    success = incremental_job.execute()
-    print(f"작업 결과: {'성공' if success else '실패'}")
+        print("\n=== 증분 수집 작업 테스트 ===")
+        incremental_job = IncrementalTourismJob()
+        success = await incremental_job.execute()
+        print(f"작업 결과: {'성공' if success else '실패'}")
+    
+    # 비동기 실행
+    asyncio.run(test_jobs())
 

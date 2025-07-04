@@ -8,9 +8,10 @@ from datetime import datetime, timedelta
 from typing import Dict, List
 
 from app.core.base_job import BaseJob, JobResult, JobConfig
-from app.collectors.weather_collector import WeatherDataCollector
+from app.core.unified_api_client import get_unified_api_client, APIProvider
+from app.processors.data_transformation_pipeline import get_transformation_pipeline
 from config.constants import WEATHER_COORDINATES
-from app.core.database_manager import DatabaseManager
+from app.core.database_manager_extension import get_extended_database_manager
 
 
 class WeatherDataJob(BaseJob):
@@ -18,11 +19,12 @@ class WeatherDataJob(BaseJob):
 
     def __init__(self, config: JobConfig):
         super().__init__(config)
-        self.collector = WeatherDataCollector()
-        self.db_manager = DatabaseManager()
+        self.unified_client = get_unified_api_client()
+        self.transformation_pipeline = get_transformation_pipeline()
+        self.db_manager = get_extended_database_manager()
         self.processed_records = 0
 
-    def execute(self) -> JobResult:
+    async def execute(self) -> JobResult:
         """날씨 데이터 수집 실행"""
         result = JobResult(
             job_name=self.config.job_name,
@@ -31,31 +33,26 @@ class WeatherDataJob(BaseJob):
             start_time=datetime.now(),
         )
 
-        try:
-            # 현재 날씨 데이터 수집
-            current_weather_data = self._collect_current_weather()
-            self.logger.info(f"현재 날씨 데이터 {len(current_weather_data)}건 수집")
+        async with self.unified_client:
+            try:
+                # 통합 기상 데이터 수집 (새 구조)
+                weather_collection_result = await self._collect_all_weather_data()
+                
+                total_raw_records = weather_collection_result.get('total_raw_records', 0)
+                total_processed_records = weather_collection_result.get('total_processed_records', 0)
+                
+                self.logger.info(f"원본 날씨 데이터 {total_raw_records}건 수집")
+                self.logger.info(f"처리된 날씨 데이터 {total_processed_records}건 저장")
+                
+                saved_records = total_processed_records
 
-            # 예보 데이터 수집
-            forecast_data = self._collect_forecast_data()
-            self.logger.info(f"예보 데이터 {len(forecast_data)}건 수집")
-
-            # 과거 날씨 데이터 수집 (최근 7일)
-            historical_data = self._collect_historical_data()
-            self.logger.info(f"과거 날씨 데이터 {len(historical_data)}건 수집")
-
-            # 데이터 저장
-            saved_records = self._save_weather_data(
-                current_weather_data, forecast_data, historical_data
-            )
-
-            result.processed_records = saved_records
-            result.metadata = {
-                "current_weather_records": len(current_weather_data),
-                "forecast_records": len(forecast_data),
-                "historical_records": len(historical_data),
-                "regions_processed": len(WEATHER_COORDINATES),
-            }
+                result.processed_records = saved_records
+                result.metadata = {
+                    "raw_weather_records": total_raw_records,
+                    "processed_weather_records": total_processed_records,
+                    "regions_processed": len(WEATHER_COORDINATES),
+                    "batch_id": weather_collection_result.get('batch_id')
+                }
 
             self.logger.info(f"날씨 데이터 수집 완료: 총 {saved_records}건 처리")
 
@@ -65,106 +62,236 @@ class WeatherDataJob(BaseJob):
 
         return result
 
-    def _collect_current_weather(self) -> List[Dict]:
-        """현재 날씨 데이터 수집"""
-        current_data = []
-
-        for region_name in WEATHER_COORDINATES.keys():
+    async def _collect_all_weather_data(self) -> Dict:
+        """통합 기상 데이터 수집 (새 구조)"""
+        collection_result = {
+            'total_raw_records': 0,
+            'total_processed_records': 0,
+            'regions_processed': 0,
+            'batch_id': f"weather_collection_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        }
+        
+        for region_name, coordinates in WEATHER_COORDINATES.items():
             try:
-                weather_data = self.collector.get_current_weather(region_name)
-                if weather_data:
-                    current_data.append(weather_data)
-                    self.logger.debug(f"현재 날씨 수집 완료: {region_name}")
-            except Exception as e:
-                self.logger.warning(f"현재 날씨 수집 실패 [{region_name}]: {str(e)}")
-
-        return current_data
-
-    def _collect_forecast_data(self) -> List[Dict]:
-        """예보 데이터 수집"""
-        forecast_data = []
-
-        for region_name in WEATHER_COORDINATES.keys():
-            try:
-                forecasts = self.collector.get_weather_forecast(region_name, days=3)
-                forecast_data.extend(forecasts)
-                self.logger.debug(f"예보 데이터 수집 완료: {region_name}")
-            except Exception as e:
-                self.logger.warning(f"예보 데이터 수집 실패 [{region_name}]: {str(e)}")
-
-        return forecast_data
-
-    def _collect_historical_data(self) -> List[Dict]:
-        """과거 날씨 데이터 수집"""
-        historical_data = []
-
-        # 최근 7일 데이터 수집
-        end_date = datetime.now() - timedelta(days=1)
-        start_date = end_date - timedelta(days=6)
-
-        for region_name in WEATHER_COORDINATES.keys():
-            try:
-                historical = self.collector.get_historical_weather(
-                    region_name,
-                    start_date.strftime("%Y%m%d"),
-                    end_date.strftime("%Y%m%d"),
+                # 현재 날씨 수집
+                current_result = await self._collect_region_current_weather(
+                    region_name, coordinates
                 )
-                historical_data.extend(historical)
-                self.logger.debug(f"과거 날씨 수집 완료: {region_name}")
+                
+                # 예보 데이터 수집
+                forecast_result = await self._collect_region_forecast(
+                    region_name, coordinates
+                )
+                
+                # 과거 데이터 수집
+                historical_result = await self._collect_region_historical(
+                    region_name, coordinates
+                )
+                
+                # 통계 업데이트
+                collection_result['total_raw_records'] += (
+                    current_result.get('raw_records', 0) +
+                    forecast_result.get('raw_records', 0) +
+                    historical_result.get('raw_records', 0)
+                )
+                
+                collection_result['total_processed_records'] += (
+                    current_result.get('processed_records', 0) +
+                    forecast_result.get('processed_records', 0) +
+                    historical_result.get('processed_records', 0)
+                )
+                
+                collection_result['regions_processed'] += 1
+                
+                self.logger.debug(f"지역 날씨 데이터 수집 완료: {region_name}")
+                
             except Exception as e:
-                self.logger.warning(f"과거 날씨 수집 실패 [{region_name}]: {str(e)}")
+                self.logger.warning(f"지역 날씨 데이터 수집 실패 [{region_name}]: {str(e)}")
+                continue
+        
+        return collection_result
 
-        return historical_data
-
-    def _save_weather_data(
-        self,
-        current_data: List[Dict],
-        forecast_data: List[Dict],
-        historical_data: List[Dict],
-    ) -> int:
-        """날씨 데이터 저장"""
-        total_saved = 0
-
+    async def _collect_region_current_weather(self, region_name: str, coordinates: Dict) -> Dict:
+        """지역 현재 날씨 데이터 수집 (통합 구조)"""
         try:
-            # 현재 날씨 데이터를 과거 데이터 형식으로 변환하여 저장
-            if current_data:
-                current_weather_formatted = self._format_current_weather_for_db(
-                    current_data
+            params = {
+                'lat': coordinates['lat'],
+                'lon': coordinates['lon'],
+                'units': 'metric',
+                'lang': 'kr'
+            }
+            
+            response = await self.unified_client.call_api(
+                api_provider=APIProvider.WEATHER,
+                endpoint='weather',
+                params=params,
+                store_raw=True,
+                cache_ttl=900  # 15분 캐시
+            )
+            
+            if response.success:
+                # 데이터 변환 및 저장
+                transform_result = await self.transformation_pipeline.transform_raw_data(
+                    response.raw_data_id
                 )
-                if current_weather_formatted:
-                    saved_count = self.db_manager.insert_weather_data(
-                        current_weather_formatted
+                
+                if transform_result.success:
+                    # 변환된 데이터를 날씨 테이블에 저장
+                    await self._save_weather_current_data(
+                        region_name, transform_result.processed_data, response.raw_data_id
                     )
-                    total_saved += saved_count
-                    self.logger.debug(f"현재 날씨 데이터 {saved_count}건 저장")
-
-            # 예보 데이터 저장
-            if forecast_data:
-                forecast_formatted = self._format_forecast_data_for_db(forecast_data)
-                if forecast_formatted:
-                    saved_count = self.db_manager.insert_forecast_data(
-                        forecast_formatted
-                    )
-                    total_saved += saved_count
-                    self.logger.debug(f"예보 데이터 {saved_count}건 저장")
-
-            # 과거 날씨 데이터 저장
-            if historical_data:
-                historical_formatted = self._format_historical_data_for_db(
-                    historical_data
-                )
-                if historical_formatted:
-                    saved_count = self.db_manager.insert_weather_data(
-                        historical_formatted
-                    )
-                    total_saved += saved_count
-                    self.logger.debug(f"과거 날씨 데이터 {saved_count}건 저장")
-
+                    
+                    return {
+                        'raw_records': 1,
+                        'processed_records': len(transform_result.processed_data)
+                    }
+            
+            return {'raw_records': 0, 'processed_records': 0}
+            
         except Exception as e:
-            self.logger.error(f"날씨 데이터 저장 중 오류 발생: {str(e)}")
-            raise
+            self.logger.error(f"현재 날씨 수집 실패 [{region_name}]: {e}")
+            return {'raw_records': 0, 'processed_records': 0}
 
-        return total_saved
+    async def _collect_region_forecast(self, region_name: str, coordinates: Dict) -> Dict:
+        """지역 예보 데이터 수집 (통합 구조)"""
+        try:
+            params = {
+                'lat': coordinates['lat'],
+                'lon': coordinates['lon'],
+                'units': 'metric',
+                'lang': 'kr',
+                'cnt': 24  # 3일 예보 (3시간 간격)
+            }
+            
+            response = await self.unified_client.call_api(
+                api_provider=APIProvider.WEATHER,
+                endpoint='forecast',
+                params=params,
+                store_raw=True,
+                cache_ttl=1800  # 30분 캐시
+            )
+            
+            if response.success:
+                # 데이터 변환 및 저장
+                transform_result = await self.transformation_pipeline.transform_raw_data(
+                    response.raw_data_id
+                )
+                
+                if transform_result.success:
+                    # 변환된 데이터를 예보 테이블에 저장
+                    await self._save_weather_forecast_data(
+                        region_name, transform_result.processed_data, response.raw_data_id
+                    )
+                    
+                    return {
+                        'raw_records': 1,
+                        'processed_records': len(transform_result.processed_data)
+                    }
+            
+            return {'raw_records': 0, 'processed_records': 0}
+            
+        except Exception as e:
+            self.logger.error(f"예보 데이터 수집 실패 [{region_name}]: {e}")
+            return {'raw_records': 0, 'processed_records': 0}
+
+    async def _collect_region_historical(self, region_name: str, coordinates: Dict) -> Dict:
+        """지역 과거 날씨 데이터 수집 (통합 구조)"""
+        try:
+            # 최근 7일 데이터
+            end_date = datetime.now() - timedelta(days=1)
+            start_date = end_date - timedelta(days=6)
+            
+            params = {
+                'lat': coordinates['lat'],
+                'lon': coordinates['lon'],
+                'start_date': start_date.strftime('%Y%m%d'),
+                'end_date': end_date.strftime('%Y%m%d')
+            }
+            
+            response = await self.unified_client.call_api(
+                api_provider=APIProvider.KMA,
+                endpoint='getWthrDataList',
+                params=params,
+                store_raw=True,
+                cache_ttl=3600  # 1시간 캐시
+            )
+            
+            if response.success:
+                # 데이터 변환 및 저장
+                transform_result = await self.transformation_pipeline.transform_raw_data(
+                    response.raw_data_id
+                )
+                
+                if transform_result.success:
+                    # 변환된 데이터를 과거 날씨 테이블에 저장
+                    await self._save_weather_historical_data(
+                        region_name, transform_result.processed_data, response.raw_data_id
+                    )
+                    
+                    return {
+                        'raw_records': 1,
+                        'processed_records': len(transform_result.processed_data)
+                    }
+            
+            return {'raw_records': 0, 'processed_records': 0}
+            
+        except Exception as e:
+            self.logger.error(f"과거 날씨 수집 실패 [{region_name}]: {e}")
+            return {'raw_records': 0, 'processed_records': 0}
+
+    async def _save_weather_current_data(self, region_name: str, processed_data: List[Dict], raw_data_id: str) -> int:
+        """현재 날씨 데이터 저장 (통합 구조)"""
+        try:
+            saved_count = 0
+            for data in processed_data:
+                data['raw_data_id'] = raw_data_id
+                data['region_name'] = region_name
+                # 현재 날씨 테이블에 저장
+                await self.db_manager.execute_query(
+                    "INSERT INTO current_weather (region_code, temperature, humidity, raw_data_id) VALUES (%s, %s, %s, %s)",
+                    (self._get_region_code_from_name(region_name), data.get('temperature'), data.get('humidity'), raw_data_id)
+                )
+                saved_count += 1
+            return saved_count
+        except Exception as e:
+            self.logger.error(f"현재 날씨 데이터 저장 실패: {e}")
+            return 0
+    
+    async def _save_weather_forecast_data(self, region_name: str, processed_data: List[Dict], raw_data_id: str) -> int:
+        """예보 날씨 데이터 저장 (통합 구조)"""
+        try:
+            saved_count = 0
+            for data in processed_data:
+                data['raw_data_id'] = raw_data_id
+                data['region_name'] = region_name
+                # 예보 테이블에 저장
+                await self.db_manager.execute_query(
+                    "INSERT INTO weather_forecast (region_code, forecast_date, min_temp, max_temp, raw_data_id) VALUES (%s, %s, %s, %s, %s)",
+                    (self._get_region_code_from_name(region_name), data.get('forecast_date'), data.get('min_temp'), data.get('max_temp'), raw_data_id)
+                )
+                saved_count += 1
+            return saved_count
+        except Exception as e:
+            self.logger.error(f"예보 날씨 데이터 저장 실패: {e}")
+            return 0
+    
+    async def _save_weather_historical_data(self, region_name: str, processed_data: List[Dict], raw_data_id: str) -> int:
+        """과거 날씨 데이터 저장 (통합 구조)"""
+        try:
+            saved_count = 0
+            for data in processed_data:
+                data['raw_data_id'] = raw_data_id
+                data['region_name'] = region_name
+                # 과거 날씨 테이블에 저장
+                await self.db_manager.execute_query(
+                    "INSERT INTO historical_weather_daily (region_code, weather_date, avg_temp, max_temp, min_temp, raw_data_id) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (self._get_region_code_from_name(region_name), data.get('weather_date'), data.get('avg_temp'), data.get('max_temp'), data.get('min_temp'), raw_data_id)
+                )
+                saved_count += 1
+            return saved_count
+        except Exception as e:
+            self.logger.error(f"과거 날씨 데이터 저장 실패: {e}")
+            return 0
 
     def _format_current_weather_for_db(self, current_data: List[Dict]) -> List[Dict]:
         """현재 날씨 데이터를 DB 저장 형식으로 변환"""
