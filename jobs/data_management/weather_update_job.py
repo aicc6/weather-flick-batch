@@ -79,7 +79,8 @@ class WeatherUpdateJob:
             ORDER BY region_name
             """
 
-            return await self.db_manager.fetch_all_async(query)
+            # 동기 방식으로 변경
+            return self.db_manager.fetch_all(query)
 
         except Exception as e:
             self.logger.error(f"지역 목록 조회 실패: {e}")
@@ -251,9 +252,9 @@ class WeatherUpdateJob:
                 wind_speed, wind_direction, atmospheric_pressure,
                 weather_condition, visibility, observed_at
             ) VALUES (
-                %(region_code)s, %(temperature)s, %(humidity)s, 0,
-                %(wind_speed)s, %(wind_direction)s, %(pressure)s,
-                %(weather_description)s, %(visibility)s, %(recorded_at)s
+                %s, %s, %s, 0,
+                %s, %s, %s,
+                %s, %s, %s
             )
             ON CONFLICT ON CONSTRAINT unique_current_weather_region_time
             DO UPDATE SET
@@ -267,8 +268,18 @@ class WeatherUpdateJob:
                 observed_at = EXCLUDED.observed_at
             """
 
-            params = {**weather_data, "region_code": region_code}
-            await self.db_manager.execute_async(query, params)
+            params = (
+                region_code,
+                weather_data["temperature"],
+                weather_data["humidity"],
+                weather_data["wind_speed"],
+                weather_data["wind_direction"],
+                weather_data["pressure"],
+                weather_data["weather_description"],
+                weather_data["visibility"],
+                weather_data["recorded_at"],
+            )
+            self.db_manager.execute_update(query, params)
 
         except Exception as e:
             self.logger.error(f"현재 날씨 저장 실패: {e}")
@@ -282,11 +293,11 @@ class WeatherUpdateJob:
             # 기존 예보 데이터 삭제 (7일 이후)
             cleanup_query = """
             DELETE FROM weather_forecast
-            WHERE region_code = %(region_code)s
+            WHERE region_code = %s
             AND forecast_date < CURRENT_DATE - INTERVAL '7 days'
             """
-            await self.db_manager.execute_async(
-                cleanup_query, {"region_code": region_code}
+            self.db_manager.execute_update(
+                cleanup_query, (region_code,)
             )
 
             # 새 예보 데이터 저장
@@ -295,9 +306,9 @@ class WeatherUpdateJob:
                 region_code, forecast_date, forecast_type, min_temp, max_temp,
                 precipitation_prob, weather_condition, forecast_issued_at
             ) VALUES (
-                %(region_code)s, %(forecast_date)s, 'short',
-                %(temp_min)s, %(temp_max)s, %(precipitation_probability)s,
-                %(weather_description)s, NOW()
+                %s, %s, 'short',
+                %s, %s, %s,
+                %s, NOW()
             )
             ON CONFLICT ON CONSTRAINT unique_weather_forecast_region_date_type
             DO UPDATE SET
@@ -311,15 +322,15 @@ class WeatherUpdateJob:
             count = 0
             for forecast in forecast_data:
                 forecast_date = forecast["forecast_time"].date()
-                params = {
-                    "region_code": region_code,
-                    "forecast_date": forecast_date,
-                    "temp_min": forecast["temp_min"],
-                    "temp_max": forecast["temp_max"],
-                    "precipitation_probability": forecast["precipitation_probability"],
-                    "weather_description": forecast["weather_description"],
-                }
-                await self.db_manager.execute_async(insert_query, params)
+                params = (
+                    region_code,
+                    forecast_date,
+                    forecast["temp_min"],
+                    forecast["temp_max"],
+                    forecast["precipitation_probability"],
+                    forecast["weather_description"],
+                )
+                self.db_manager.execute_update(insert_query, params)
                 count += 1
 
             return count

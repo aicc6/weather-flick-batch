@@ -26,6 +26,7 @@ class APIProvider(Enum):
     """API 제공자 열거형"""
     KTO = "KTO"
     KMA = "KMA"
+    WEATHER = "WEATHER"  # 날씨 API 제공자 추가
     GOOGLE = "GOOGLE"
     NAVER = "NAVER"
 
@@ -290,11 +291,20 @@ class UnifiedAPIClient:
             api_key = api_key_info.key
             params = params.copy()
             params['serviceKey'] = api_key
+        elif api_provider == APIProvider.WEATHER:
+            # OpenWeatherMap API의 경우 appid 파라미터 사용
+            weather_api_key = os.getenv('WEATHER_API_KEY')
+            if not weather_api_key:
+                raise ValueError(f"{api_provider.value} API 키가 설정되지 않았습니다.")
+            
+            params = params.copy()
+            params['appid'] = weather_api_key
         
         # Base URL 설정
         base_urls = {
             APIProvider.KTO: os.getenv('KTO_API_BASE_URL', 'http://apis.data.go.kr/B551011/KorService2'),
             APIProvider.KMA: os.getenv('KMA_API_BASE_URL', 'http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0'),
+            APIProvider.WEATHER: os.getenv('WEATHER_API_BASE_URL', 'http://api.openweathermap.org/data/2.5'),
         }
         
         base_url = base_urls.get(api_provider)
@@ -328,6 +338,16 @@ class UnifiedAPIClient:
                 if result_code != '00':
                     result_msg = response_data.get('response', {}).get('header', {}).get('resultMsg', '알 수 없는 오류')
                     raise ValueError(f"API 오류 ({result_code}): {result_msg}")
+            elif api_provider == APIProvider.WEATHER:
+                # OpenWeatherMap API 오류 확인
+                if 'cod' in response_data:
+                    cod = response_data['cod']
+                    # cod가 문자열일 수 있음 (예: "200")
+                    if isinstance(cod, str):
+                        cod = int(cod) if cod.isdigit() else 0
+                    if cod != 200:
+                        error_msg = response_data.get('message', '알 수 없는 오류')
+                        raise ValueError(f"Weather API 오류 ({cod}): {error_msg}")
             
             return response_data
     
@@ -389,6 +409,8 @@ class UnifiedAPIClient:
                     api_key_info = self.key_manager.get_active_key(api_provider)
                     if api_key_info:
                         api_key = api_key_info.key
+                elif api_provider == APIProvider.WEATHER:
+                    api_key = os.getenv('WEATHER_API_KEY', 'unknown')
                 
                 raw_data_id = self._store_raw_data(
                     api_provider, endpoint, params, response_data, 200, duration_ms, api_key
@@ -425,9 +447,11 @@ class UnifiedAPIClient:
                         api_key_info = self.key_manager.get_active_key(api_provider)
                         if api_key_info:
                             api_key = api_key_info.key
+                    elif api_provider == APIProvider.WEATHER:
+                        api_key = os.getenv('WEATHER_API_KEY', 'unknown')
                     
                     self._store_raw_data(
-                        api_provider, endpoint, params, error_response, 0, duration_ms, api_key
+                        api_provider, endpoint, params, error_response, 500, duration_ms, api_key
                     )
                 except:
                     pass  # 오류 저장 실패는 무시
@@ -460,3 +484,8 @@ def get_unified_api_client() -> UnifiedAPIClient:
     if _unified_api_client is None:
         _unified_api_client = UnifiedAPIClient()
     return _unified_api_client
+
+def reset_unified_api_client():
+    """통합 API 클라이언트 싱글톤 인스턴스 리셋"""
+    global _unified_api_client
+    _unified_api_client = None

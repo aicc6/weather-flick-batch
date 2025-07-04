@@ -6,6 +6,7 @@
 
 import uuid
 import logging
+import json
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from app.core.database_manager import SyncDatabaseManager
@@ -35,9 +36,9 @@ class DatabaseManagerExtension:
             raw_data.get('api_provider'),
             raw_data.get('endpoint'), 
             raw_data.get('request_method'),
-            raw_data.get('request_params'),
+            self.db_manager.serialize_for_db(raw_data.get('request_params')),
             raw_data.get('response_status'),
-            raw_data.get('raw_response'),
+            self.db_manager.serialize_for_db(raw_data.get('raw_response')),
             raw_data.get('response_size'),
             raw_data.get('request_duration'),
             raw_data.get('api_key_hash'),
@@ -137,13 +138,13 @@ class DatabaseManagerExtension:
         params = (
             log_data.get('raw_data_id'),
             log_data.get('target_table'),
-            log_data.get('transformation_rule'),
+            self.db_manager.serialize_for_db(log_data.get('transformation_rule')),
             log_data.get('input_record_count'),
             log_data.get('output_record_count'),
             log_data.get('error_count'),
             log_data.get('transformation_time_ms'),
             log_data.get('status'),
-            log_data.get('error_details'),
+            self.db_manager.serialize_for_db(log_data.get('error_details')),
             log_data.get('quality_score')
         )
         

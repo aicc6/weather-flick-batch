@@ -21,9 +21,11 @@ class JobStatus(Enum):
 
     PENDING = "pending"
     RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SKIPPED = "skipped"
+    SUCCESS = "success"  # DB 제약조건에 맞게 수정
+    COMPLETED = "success"  # 하위 호환성을 위한 별칭
+    FAILED = "failure"  # DB 제약조건에 맞게 수정
+    FAILURE = "failure"  # 하위 호환성을 위한 별칭
+    CANCELLED = "cancelled"
 
 
 class RecommendationLevel(Enum):

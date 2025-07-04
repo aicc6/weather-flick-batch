@@ -106,6 +106,13 @@ class MultiAPIKeyManager:
         """환경 변수에서 API 키들 파싱 (쉼표로 구분된 여러 키 지원)"""
         keys = []
         
+        # .env 파일을 강제로 다시 로드 (tourism 작업 실행 시 필요)
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(override=True)  # 기존 환경변수 덮어쓰기
+        except ImportError:
+            pass
+        
         # 환경 변수에서 키 가져오기
         main_key = os.getenv(env_var_prefix, "")
         if main_key:
@@ -362,3 +369,8 @@ def get_api_key_manager() -> MultiAPIKeyManager:
     if _api_key_manager is None:
         _api_key_manager = MultiAPIKeyManager()
     return _api_key_manager
+
+def reset_api_key_manager():
+    """API 키 매니저 싱글톤 인스턴스 리셋 (환경 변수 재로드용)"""
+    global _api_key_manager
+    _api_key_manager = None

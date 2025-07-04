@@ -8,6 +8,7 @@
 import psycopg2
 import psycopg2.extras
 import asyncpg
+import json
 from contextlib import contextmanager, asynccontextmanager
 from typing import Dict, List, Any, Optional, Generator, AsyncGenerator
 from datetime import datetime
@@ -41,6 +42,13 @@ class BaseDatabaseManager(ABC):
     def __init__(self):
         self.config = get_database_config()
         self.logger = logging.getLogger(self.__class__.__name__)
+
+    @staticmethod
+    def serialize_for_db(value):
+        """딕셔너리나 리스트 등 복잡한 객체를 PostgreSQL에 저장 가능한 JSON 문자열로 변환"""
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False, default=str)
+        return value
 
     @abstractmethod
     def fetch_all(
@@ -149,8 +157,14 @@ class SyncDatabaseManager(BaseDatabaseManager):
     def execute_update(self, query: str, params: Optional[tuple] = None) -> int:
         """INSERT/UPDATE/DELETE 쿼리 실행하여 영향받은 행 수 반환"""
         try:
+            # params가 있으면 복잡한 객체들을 직렬화
+            if params:
+                processed_params = tuple(self.serialize_for_db(param) for param in params)
+            else:
+                processed_params = params
+            
             with self.get_cursor() as cursor:
-                cursor.execute(query, params)
+                cursor.execute(query, processed_params)
                 return cursor.rowcount
         except Exception as e:
             self.logger.error(f"UPDATE 쿼리 실행 실패: {e}")
@@ -162,8 +176,14 @@ class SyncDatabaseManager(BaseDatabaseManager):
             return 0
 
         try:
+            # params_list의 각 tuple의 복잡한 객체들을 직렬화
+            processed_params_list = []
+            for params in params_list:
+                processed_params = tuple(self.serialize_for_db(param) for param in params)
+                processed_params_list.append(processed_params)
+            
             with self.get_cursor() as cursor:
-                cursor.executemany(query, params_list)
+                cursor.executemany(query, processed_params_list)
                 return cursor.rowcount
         except Exception as e:
             self.logger.error(f"배치 쿼리 실행 실패: {e}")
@@ -182,7 +202,15 @@ class SyncDatabaseManager(BaseDatabaseManager):
         if not unique_conflict_columns:
             raise ValueError("unique_conflict_columns는 비어 있을 수 없습니다.")
 
-        columns = list(data[0].keys())
+        # 데이터 전처리: 복잡한 객체들을 JSON으로 변환
+        processed_data = []
+        for item in data:
+            processed_item = {}
+            for key, value in item.items():
+                processed_item[key] = self.serialize_for_db(value)
+            processed_data.append(processed_item)
+
+        columns = list(processed_data[0].keys())
         update_columns = [col for col in columns if col not in unique_conflict_columns]
 
         if not update_columns:
@@ -202,7 +230,7 @@ class SyncDatabaseManager(BaseDatabaseManager):
         try:
             with self.get_cursor() as cursor:
                 psycopg2.extras.execute_values(
-                    cursor, query, [tuple(d.values()) for d in data]
+                    cursor, query, [tuple(d.values()) for d in processed_data]
                 )
                 affected_rows = cursor.rowcount
                 self.logger.info(
@@ -495,9 +523,15 @@ class AsyncDatabaseManager(BaseDatabaseManager):
     async def execute_update(self, query: str, params: Optional[tuple] = None) -> int:
         """비동기 INSERT/UPDATE/DELETE 쿼리 실행"""
         try:
+            # params가 있으면 복잡한 객체들을 직렬화
+            if params:
+                processed_params = tuple(self.serialize_for_db(param) for param in params)
+            else:
+                processed_params = params
+            
             async with self.get_connection() as connection:
-                if params:
-                    result = await connection.execute(query, *params)
+                if processed_params:
+                    result = await connection.execute(query, *processed_params)
                 else:
                     result = await connection.execute(query)
                 # PostgreSQL의 경우 "INSERT 0 5" 형태로 반환되므로 숫자 부분만 추출
@@ -512,9 +546,15 @@ class AsyncDatabaseManager(BaseDatabaseManager):
             return 0
 
         try:
+            # params_list의 각 tuple의 복잡한 객체들을 직렬화
+            processed_params_list = []
+            for params in params_list:
+                processed_params = tuple(self.serialize_for_db(param) for param in params)
+                processed_params_list.append(processed_params)
+            
             async with self.get_connection() as connection:
-                await connection.executemany(query, params_list)
-                return len(params_list)  # asyncpg는 rowcount를 반환하지 않음
+                await connection.executemany(query, processed_params_list)
+                return len(processed_params_list)  # asyncpg는 rowcount를 반환하지 않음
         except Exception as e:
             self.logger.error(f"비동기 배치 쿼리 실행 실패: {e}")
             raise QueryError(f"비동기 배치 쿼리 실행 실패: {e}")
@@ -533,7 +573,15 @@ class AsyncDatabaseManager(BaseDatabaseManager):
         if not unique_conflict_columns:
             raise ValueError("unique_conflict_columns는 비어 있을 수 없습니다.")
 
-        columns = list(data[0].keys())
+        # 데이터 전처리: 복잡한 객체들을 JSON으로 변환
+        processed_data = []
+        for item in data:
+            processed_item = {}
+            for key, value in item.items():
+                processed_item[key] = self.serialize_for_db(value)
+            processed_data.append(processed_item)
+
+        columns = list(processed_data[0].keys())
         update_columns = [col for col in columns if col not in unique_conflict_columns]
 
         if not update_columns:
@@ -545,7 +593,7 @@ class AsyncDatabaseManager(BaseDatabaseManager):
 
         # asyncpg는 execute_values를 지원하지 않으므로 다른 방식 사용
         values_list = []
-        for i, item in enumerate(data):
+        for i, item in enumerate(processed_data):
             placeholders = [f"${j + i * len(columns) + 1}" for j in range(len(columns))]
             values_list.append(f"({', '.join(placeholders)})")
 
@@ -557,7 +605,7 @@ class AsyncDatabaseManager(BaseDatabaseManager):
 
         # 모든 값을 평면화
         flat_params = []
-        for item in data:
+        for item in processed_data:
             flat_params.extend(item.values())
 
         try:

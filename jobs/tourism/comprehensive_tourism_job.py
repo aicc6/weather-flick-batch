@@ -14,6 +14,16 @@ from typing import Dict
 # 상위 디렉토리 경로 추가 (모듈 import를 위해)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
+# 환경 변수 명시적 로드 (tourism 작업 실행 시 필요)
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
+# API 키 매니저 및 클라이언트 리셋 (싱글톤 인스턴스 재생성을 위해)
+from app.core.multi_api_key_manager import reset_api_key_manager
+from app.core.unified_api_client import reset_unified_api_client
+reset_api_key_manager()
+reset_unified_api_client()
+
 from app.core.base_job import BaseJob, JobConfig
 from app.collectors.unified_kto_client import get_unified_kto_client
 from app.processors.data_transformation_pipeline import get_transformation_pipeline
@@ -120,7 +130,7 @@ class ComprehensiveTourismJob(BaseJob):
 
             # 7. 작업 로그 저장 (새 구조)
             self._save_job_log(
-                status="completed",
+                status="success",
                 processed_records=total_processed,
                 execution_time=execution_time,
                 additional_info={
@@ -137,7 +147,7 @@ class ComprehensiveTourismJob(BaseJob):
 
         except Exception as e:
             self.logger.error(f"종합 관광정보 수집 작업 실패: {e}")
-            self._save_job_log(status="failed", error_message=str(e))
+            self._save_job_log(status="failure", error_message=str(e))
             return False
 
     def _check_data_quality(self) -> Dict:
@@ -328,14 +338,14 @@ class IncrementalTourismJob(BaseJob):
 
             # 3. 작업 로그 저장
             total_processed = processed_festivals + total_attractions
-            self._save_job_log("completed", total_processed)
+            self._save_job_log("success", total_processed)
 
             self.logger.info("=== 증분 관광정보 수집 작업 완료 ===")
             return True
 
         except Exception as e:
             self.logger.error(f"증분 관광정보 수집 작업 실패: {e}")
-            self._save_job_log("failed", error_message=str(e))
+            self._save_job_log("failure", error_message=str(e))
             return False
 
     def _save_job_log(

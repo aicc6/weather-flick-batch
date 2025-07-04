@@ -110,11 +110,11 @@ class BatchJobRunner:
             },
         }
 
-    def _create_tourism_job(self):
+    async def _create_tourism_job(self):
         """관광지 동기화 작업 생성 (ComprehensiveTourismJob 사용)"""
         # TourismSyncJob이 없으므로 ComprehensiveTourismJob으로 대체
         job = ComprehensiveTourismJob()
-        return job.execute()
+        return await job.execute()
 
     def _create_recommendation_job(self):
         """추천 점수 계산 작업 생성"""
@@ -146,15 +146,15 @@ class BatchJobRunner:
         job = DataQualityJob(config)
         return job.run()
 
-    def _create_comprehensive_tourism_job(self):
+    async def _create_comprehensive_tourism_job(self):
         """종합 관광정보 수집 작업 생성"""
         job = ComprehensiveTourismJob()
-        return job.execute()
+        return await job.execute()
 
-    def _create_incremental_tourism_job(self):
+    async def _create_incremental_tourism_job(self):
         """증분 관광정보 수집 작업 생성"""
         job = IncrementalTourismJob()
-        return job.execute()
+        return await job.execute()
 
     def _create_backup_job(self):
         """데이터베이스 백업 작업 생성"""

@@ -80,7 +80,7 @@ class LogCleanupJob:
                 )
 
             # 4. 로그 테이블 파티션 관리
-            await self._manage_log_partitions()
+            self._manage_log_partitions()
 
             # 5. 디스크 사용량 체크
             disk_usage = await self._check_disk_usage()
@@ -279,12 +279,12 @@ class LogCleanupJob:
             self.logger.error(f"S3 아카이브 삭제 실패: {e}")
             raise
 
-    async def _manage_log_partitions(self):
+    def _manage_log_partitions(self):
         """데이터베이스 로그 테이블 파티션 관리"""
         try:
-            from app.core.database_manager import DatabaseManager
+            from app.core.database_manager_extension import get_extended_database_manager
 
-            db_manager = DatabaseManager()
+            db_manager = get_extended_database_manager()
 
             # 6개월 이전 파티션 삭제
             cutoff_date = datetime.now() - timedelta(days=180)
@@ -294,17 +294,17 @@ class LogCleanupJob:
             SELECT schemaname, tablename
             FROM pg_tables
             WHERE tablename LIKE 'system_logs_%'
-            AND tablename < %(partition_name)s
+            AND tablename < %s
             """
 
             partition_name = f"system_logs_{cutoff_date.strftime('%Y_%m')}"
-            old_partitions = await db_manager.fetch_all(
-                query, {"partition_name": partition_name}
+            old_partitions = db_manager.db_manager.fetch_all(
+                query, (partition_name,)
             )
 
             for partition in old_partitions:
                 drop_query = f"DROP TABLE IF EXISTS {partition['tablename']}"
-                await db_manager.execute(drop_query)
+                db_manager.db_manager.execute_update(drop_query)
                 self.logger.info(f"로그 파티션 삭제: {partition['tablename']}")
 
             # 새 파티션 생성 (다음 3개월)
@@ -319,7 +319,7 @@ class LogCleanupJob:
                 TO ('{(future_date + timedelta(days=32)).strftime("%Y-%m-01")}')
                 """
 
-                await db_manager.execute(create_query)
+                db_manager.db_manager.execute_update(create_query)
                 self.logger.debug(f"로그 파티션 생성: {partition_name}")
 
         except Exception as e:

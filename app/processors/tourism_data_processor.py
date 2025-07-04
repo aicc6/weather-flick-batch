@@ -319,6 +319,10 @@ class TourismDataProcessor:
         except (ValueError, TypeError):
             return None
 
+    def process_festivals_events(self, festivals_data: List[Dict]) -> int:
+        """축제/행사 데이터 처리"""
+        return self.process_content_data(festivals_data, "festivals_events")
+
     def process_comprehensive_data(self, comprehensive_data: Dict) -> Dict[str, int]:
         results = {}
         self.logger.info("=== 종합 관광 데이터 통합 처리 시작 ===")
