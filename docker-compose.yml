@@ -14,10 +14,10 @@ services:
       
       # 데이터베이스 설정
       - DB_HOST=mysql
-      - DB_USER=weather_user
-      - DB_PASSWORD=weather_password
-      - DB_NAME=weather_travel_db
-      - DB_PORT=3306
+      - DB_USER=${DB_USER:-weather_user}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME:-weather_travel_db}
+      - DB_PORT=${DB_PORT:-3306}
       
       # API 설정 (실제 키로 교체 필요)
       - KTO_API_KEY=${KTO_API_KEY}
@@ -44,10 +44,10 @@ services:
     container_name: weather-flick-mysql
     restart: unless-stopped
     environment:
-      - MYSQL_ROOT_PASSWORD=root_password
-      - MYSQL_DATABASE=weather_travel_db
-      - MYSQL_USER=weather_user
-      - MYSQL_PASSWORD=weather_password
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${DB_NAME:-weather_travel_db}
+      - MYSQL_USER=${DB_USER:-weather_user}
+      - MYSQL_PASSWORD=${DB_PASSWORD}
     ports:
       - "3306:3306"
     volumes:
@@ -94,7 +94,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin123}
     volumes:
       - grafana_data:/var/lib/grafana
     networks:
