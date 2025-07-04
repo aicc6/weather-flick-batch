@@ -1,0 +1,35 @@
+[
+  {
+    "contentid": "2671577",
+    "contenttypeid": "15",
+    "title": "서울 한강 여름축제",
+    "addr1": "서울특별시 영등포구 여의공원로 68",
+    "areacode": "1",
+    "sigungucode": "20",
+    "eventstartdate": "20250701",
+    "eventenddate": "20250831",
+    "tel": "02-3780-0551"
+  },
+  {
+    "contentid": "2671578",
+    "contenttypeid": "15",
+    "title": "부산 해운대 모래축제",
+    "addr1": "부산광역시 해운대구 해운대해변로 264",
+    "areacode": "6",
+    "sigungucode": "6",
+    "eventstartdate": "20250501",
+    "eventenddate": "20250505",
+    "tel": "051-749-4000"
+  },
+  {
+    "contentid": "2671579",
+    "contenttypeid": "15",
+    "title": "제주 유채꽃 축제",
+    "addr1": "제주특별자치도 서귀포시 표선면 가시리",
+    "areacode": "39",
+    "sigungucode": "3",
+    "eventstartdate": "20250401",
+    "eventenddate": "20250430",
+    "tel": "064-760-4000"
+  }
+]

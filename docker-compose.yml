@@ -1,0 +1,113 @@
+# 날씨 기반 여행지 추천 서비스 배치 시스템 Docker Compose
+
+version: '3.8'
+
+services:
+  weather-flick-batch:
+    build: .
+    container_name: weather-flick-batch
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      
+      # 데이터베이스 설정
+      - DB_HOST=mysql
+      - DB_USER=weather_user
+      - DB_PASSWORD=weather_password
+      - DB_NAME=weather_travel_db
+      - DB_PORT=3306
+      
+      # API 설정 (실제 키로 교체 필요)
+      - KTO_API_KEY=${KTO_API_KEY}
+      - KMA_API_KEY=${KMA_API_KEY}
+      - KTO_API_BASE_URL=http://apis.data.go.kr/B551011/KorService1
+      
+      # 스케줄 설정
+      - WEATHER_DATA_TIME=02:00
+      - TOURIST_DATA_TIME=03:00
+      - SCORE_CALCULATION_TIME=04:00
+      - DATA_QUALITY_TIME=05:00
+      - TOURIST_DATA_DAY=sunday
+      
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    depends_on:
+      - mysql
+    networks:
+      - weather-flick-network
+
+  mysql:
+    image: mysql:8.0
+    container_name: weather-flick-mysql
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_password
+      - MYSQL_DATABASE=weather_travel_db
+      - MYSQL_USER=weather_user
+      - MYSQL_PASSWORD=weather_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../weather_travel_schema.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - weather-flick-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: weather-flick-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - weather-flick-network
+
+  # 모니터링 (선택적)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: weather-flick-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    networks:
+      - weather-flick-network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: weather-flick-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - weather-flick-network
+    profiles:
+      - monitoring
+
+volumes:
+  mysql_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  weather-flick-network:
+    driver: bridge

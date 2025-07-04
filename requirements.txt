@@ -1,3 +1,40 @@
-python-dotenv==1.1.0
-requests==2.32.4
-urllib3==2.0.7
+# WeatherFlick 배치 시스템 의존성
+
+# 핵심 라이브러리
+python-dotenv>=1.1.0
+requests>=2.32.0
+urllib3>=2.0.0
+aiohttp>=3.9.0
+
+# 데이터 처리
+pandas>=2.1.0
+numpy>=1.24.0
+
+# 데이터베이스
+psycopg2-binary>=2.9.9
+asyncpg>=0.29.0
+
+# 스케줄링
+apscheduler>=3.10.4
+schedule>=1.2.0
+
+# Redis (스케줄러 저장소)
+redis>=5.0.1
+
+# 시스템 모니터링
+psutil>=5.9.6
+
+# AWS 연동
+boto3>=1.34.0
+botocore>=1.34.0
+
+# 테스팅 (개발용)
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+pytest-asyncio>=0.21.1
+
+# 개발 도구 (개발용)
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.5.0

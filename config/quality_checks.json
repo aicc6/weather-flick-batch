@@ -1,0 +1,130 @@
+{
+  "historical_weather_daily": {
+    "required_columns": [
+      "region_code",
+      "weather_date",
+      "avg_temp"
+    ],
+    "date_column": "weather_date",
+    "freshness_threshold_days": 2,
+    "duplicate_key_columns": [
+      "region_code",
+      "weather_date"
+    ],
+    "value_ranges": {
+      "avg_temp": [
+        -50,
+        60
+      ],
+      "humidity": [
+        0,
+        100
+      ],
+      "precipitation": [
+        0,
+        1000
+      ],
+      "wind_speed": [
+        0,
+        100
+      ]
+    }
+  },
+  "weather_forecast": {
+    "required_columns": [
+      "region_code",
+      "forecast_date",
+      "forecast_type"
+    ],
+    "date_column": "forecast_date",
+    "freshness_threshold_days": 1,
+    "duplicate_key_columns": [
+      "region_code",
+      "forecast_date",
+      "forecast_type"
+    ],
+    "value_ranges": {
+      "min_temp": [
+        -50,
+        60
+      ],
+      "max_temp": [
+        -50,
+        60
+      ],
+      "precipitation_prob": [
+        0,
+        100
+      ]
+    }
+  },
+  "tourist_attractions": {
+    "required_columns": [
+      "content_id",
+      "region_code",
+      "attraction_name"
+    ],
+    "date_column": "updated_at",
+    "freshness_threshold_days": 30,
+    "duplicate_key_columns": [
+      "content_id"
+    ],
+    "value_ranges": {
+      "latitude": [
+        32.0,
+        39.0
+      ],
+      "longitude": [
+        123.0,
+        132.0
+      ]
+    }
+  },
+  "travel_weather_scores": {
+    "required_columns": [
+      "region_code",
+      "date_period",
+      "overall_score"
+    ],
+    "date_column": "date_period",
+    "freshness_threshold_days": 7,
+    "duplicate_key_columns": [
+      "region_code",
+      "date_period"
+    ],
+    "value_ranges": {
+      "weather_score": [
+        0,
+        10
+      ],
+      "overall_score": [
+        0,
+        10
+      ],
+      "temperature_score": [
+        0,
+        10
+      ],
+      "precipitation_score": [
+        0,
+        10
+      ],
+      "humidity_score": [
+        0,
+        10
+      ]
+    }
+  },
+  "batch_job_logs": {
+    "required_columns": [
+      "job_name",
+      "job_type",
+      "status",
+      "start_time"
+    ],
+    "date_column": "start_time",
+    "freshness_threshold_days": 1,
+    "duplicate_key_columns": [],
+    "value_ranges": {}
+  }
+}
