@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Any, Type
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
-from app.core.database_manager import get_sync_database_manager
+from app.core.database_manager_extension import get_extended_database_manager
 
 
 @dataclass
@@ -594,7 +594,7 @@ class DataTransformationPipeline:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.db_manager = get_sync_database_manager()
+        self.db_manager = get_extended_database_manager()
         
         # 변환기 등록
         self.transformers = {

@@ -18,7 +18,7 @@ import aiohttp
 import json
 from urllib.parse import urlencode
 
-from app.core.database_manager import get_sync_database_manager
+from app.core.database_manager_extension import get_extended_database_manager
 from app.core.multi_api_key_manager import get_api_key_manager, APIProvider
 
 
@@ -64,7 +64,7 @@ class UnifiedAPIClient:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.db_manager = get_sync_database_manager()
+        self.db_manager = get_extended_database_manager()
         
         # Redis 캐시 매니저 (선택적)
         self.cache_manager = None
@@ -159,7 +159,7 @@ class UnifiedAPIClient:
         except Exception as e:
             self.logger.warning(f"캐시 저장 실패: {e}")
     
-    async def _store_raw_data(self, 
+    def _store_raw_data(self, 
                             api_provider: APIProvider, 
                             endpoint: str,
                             request_params: Dict,
@@ -173,7 +173,7 @@ class UnifiedAPIClient:
             # 파일 시스템 백업 경로 생성
             file_path = None
             if self.file_manager:
-                file_path = await self._backup_to_file(api_provider, endpoint, response_data)
+                file_path = self._backup_to_file(api_provider, endpoint, response_data)
             
             # 데이터베이스 저장용 데이터 준비
             raw_data = {
@@ -191,10 +191,10 @@ class UnifiedAPIClient:
             }
             
             # 데이터베이스에 저장
-            raw_data_id = await self.db_manager.insert_raw_data(raw_data)
+            raw_data_id = self.db_manager.insert_raw_data(raw_data)
             
             # API별 메타데이터 저장
-            await self._store_api_metadata(api_provider, raw_data_id, endpoint, request_params)
+            self._store_api_metadata(api_provider, raw_data_id, endpoint, request_params)
             
             self.logger.debug(f"원본 데이터 저장 완료: {raw_data_id}")
             return raw_data_id
@@ -203,7 +203,7 @@ class UnifiedAPIClient:
             self.logger.error(f"원본 데이터 저장 실패: {e}")
             return None
     
-    async def _store_api_metadata(self, 
+    def _store_api_metadata(self, 
                                 api_provider: APIProvider, 
                                 raw_data_id: str,
                                 endpoint: str, 
@@ -221,7 +221,7 @@ class UnifiedAPIClient:
                     'num_of_rows': params.get('numOfRows', 10),
                     'sync_batch_id': params.get('sync_batch_id')
                 }
-                await self.db_manager.insert_kto_metadata(metadata)
+                self.db_manager.insert_kto_metadata(metadata)
                 
             elif api_provider == APIProvider.KMA:
                 metadata = {
@@ -233,7 +233,7 @@ class UnifiedAPIClient:
                     'forecast_type': self._determine_kma_forecast_type(endpoint),
                     'region_name': params.get('region_name')
                 }
-                await self.db_manager.insert_kma_metadata(metadata)
+                self.db_manager.insert_kma_metadata(metadata)
                 
         except Exception as e:
             self.logger.error(f"메타데이터 저장 실패: {e}")
@@ -249,7 +249,7 @@ class UnifiedAPIClient:
         else:
             return 'unknown'
     
-    async def _backup_to_file(self, 
+    def _backup_to_file(self, 
                             api_provider: APIProvider, 
                             endpoint: str, 
                             response_data: Dict) -> Optional[str]:
@@ -267,7 +267,7 @@ class UnifiedAPIClient:
             file_path = f"raw/{api_provider.value.lower()}/{today}/{filename}"
             
             # 파일 저장
-            await self.file_manager.save_json(file_path, response_data)
+            self.file_manager.save_json(file_path, response_data)
             
             return file_path
             
@@ -390,7 +390,7 @@ class UnifiedAPIClient:
                     if api_key_info:
                         api_key = api_key_info.key
                 
-                raw_data_id = await self._store_raw_data(
+                raw_data_id = self._store_raw_data(
                     api_provider, endpoint, params, response_data, 200, duration_ms, api_key
                 )
             
@@ -426,7 +426,7 @@ class UnifiedAPIClient:
                         if api_key_info:
                             api_key = api_key_info.key
                     
-                    await self._store_raw_data(
+                    self._store_raw_data(
                         api_provider, endpoint, params, error_response, 0, duration_ms, api_key
                     )
                 except:
@@ -437,7 +437,7 @@ class UnifiedAPIClient:
     async def get_raw_data(self, raw_data_id: str) -> Optional[Dict]:
         """저장된 원본 데이터 조회"""
         try:
-            return await self.db_manager.get_raw_data(raw_data_id)
+            return self.db_manager.get_raw_data(raw_data_id)
         except Exception as e:
             self.logger.error(f"원본 데이터 조회 실패: {e}")
             return None
@@ -445,7 +445,7 @@ class UnifiedAPIClient:
     async def cleanup_expired_data(self) -> int:
         """만료된 원본 데이터 정리"""
         try:
-            return await self.db_manager.cleanup_expired_raw_data()
+            return self.db_manager.cleanup_expired_raw_data()
         except Exception as e:
             self.logger.error(f"만료 데이터 정리 실패: {e}")
             return 0

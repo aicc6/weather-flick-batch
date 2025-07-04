@@ -33,8 +33,8 @@ class WeatherDataJob(BaseJob):
             start_time=datetime.now(),
         )
 
-        async with self.unified_client:
-            try:
+        try:
+            async with self.unified_client:
                 # 통합 기상 데이터 수집 (새 구조)
                 weather_collection_result = await self._collect_all_weather_data()
                 
@@ -54,7 +54,7 @@ class WeatherDataJob(BaseJob):
                     "batch_id": weather_collection_result.get('batch_id')
                 }
 
-            self.logger.info(f"날씨 데이터 수집 완료: 총 {saved_records}건 처리")
+                self.logger.info(f"날씨 데이터 수집 완료: 총 {saved_records}건 처리")
 
         except Exception as e:
             self.logger.error(f"날씨 데이터 수집 실패: {str(e)}")

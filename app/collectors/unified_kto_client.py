@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 
 from app.core.unified_api_client import get_unified_api_client, APIProvider
 from app.processors.data_transformation_pipeline import get_transformation_pipeline
-from app.core.database_manager import get_sync_database_manager
+from app.core.database_manager_extension import get_extended_database_manager
 
 
 class UnifiedKTOClient:
@@ -22,7 +22,7 @@ class UnifiedKTOClient:
         self.logger = logging.getLogger(__name__)
         self.api_client = get_unified_api_client()
         self.transformation_pipeline = get_transformation_pipeline()
-        self.db_manager = get_sync_database_manager()
+        self.db_manager = get_extended_database_manager()
         
         # 기본 파라미터 설정
         self.default_params = {

@@ -1,0 +1,2 @@
+# This file ensures the cache directory exists in git
+# All cache files should be ignored by .gitignore for security reasons

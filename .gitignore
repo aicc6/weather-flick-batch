@@ -48,12 +48,13 @@ logs/*.log.*
 data/raw/*/*
 data/processed/*/*
 data/exports/*
-data/cache/*/*
+data/cache/*
 data/archive/*/*
 !data/.gitkeep
 !data/raw/__init__.py
 !data/processed/__init__.py
 !data/exports/__init__.py
+!data/cache/.gitkeep
 
 # Backups (ignore all backup files)
 data/backups/*.sql.gz
