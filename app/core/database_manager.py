@@ -831,4 +831,11 @@ def get_async_db_manager() -> UnifiedDatabaseManager:
 
 
 # 하위 호환성을 위한 별칭
+def get_db_manager() -> UnifiedDatabaseManager:
+    """통합 데이터베이스 매니저 인스턴스 반환 (동기)"""
+    global _unified_db_manager
+    if _unified_db_manager is None:
+        _unified_db_manager = UnifiedDatabaseManager(use_async=False)
+    return _unified_db_manager
+
 DatabaseManager = UnifiedDatabaseManager
