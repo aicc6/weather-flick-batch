@@ -66,20 +66,30 @@ class ComprehensiveTourismJob(BaseJob):
             self.logger.info("=== 종합 관광정보 수집 작업 시작 ===")
             start_time = time.time()
 
-            # 1. 통합 KTO 데이터 수집 (새 구조 사용)
-            self.logger.info("1단계: 통합 KTO API를 통한 종합 데이터 수집")
+            # 1. 통합 KTO 데이터 수집 (새 구조 사용 + 신규 API 포함)
+            self.logger.info("1단계: 통합 KTO API를 통한 종합 데이터 수집 (신규 API 포함)")
             try:
-                # 새로운 통합 구조로 모든 데이터 수집
+                # 새로운 통합 구조로 모든 데이터 수집 (4개 신규 API 포함)
                 collection_result = await self.unified_client.collect_all_data(
                     content_types=None,  # 모든 컨텐츠 타입
                     area_codes=None,  # 모든 지역
                     store_raw=True,  # 원본 데이터 저장
                     auto_transform=True,  # 자동 변환 수행
+                    include_new_apis=True,  # 신규 추가된 4개 API 포함
                 )
 
                 self.logger.info(
                     f"수집 완료: 원본 {collection_result['total_raw_records']}건, 처리 {collection_result['total_processed_records']}건"
                 )
+
+                # 신규 API 수집 결과 로깅
+                new_apis_collected = collection_result.get("new_apis_collected", {})
+                if new_apis_collected:
+                    self.logger.info("=== 신규 API 수집 결과 ===")
+                    for api_name, api_result in new_apis_collected.items():
+                        raw_count = api_result.get("total_raw_records", 0)
+                        processed_count = api_result.get("total_processed_records", 0)
+                        self.logger.info(f"  - {api_name}: 원본 {raw_count}건, 처리 {processed_count}건")
 
                 # 수집 결과를 기존 형태로 변환 (호환성)
                 comprehensive_data = {
@@ -90,6 +100,7 @@ class ComprehensiveTourismJob(BaseJob):
                     "content_types_collected": collection_result[
                         "content_types_collected"
                     ],
+                    "new_apis_collected": collection_result.get("new_apis_collected", {}),
                     "sync_batch_id": collection_result["sync_batch_id"],
                 }
 
@@ -169,7 +180,7 @@ class ComprehensiveTourismJob(BaseJob):
         quality_results = {}
 
         try:
-            # 새로 추가된 테이블들의 데이터 품질 검사
+            # 기존 테이블들과 새로 추가된 신규 API 테이블들의 데이터 품질 검사
             tables_to_check = [
                 "cultural_facilities",
                 "festivals_events",
@@ -178,6 +189,11 @@ class ComprehensiveTourismJob(BaseJob):
                 "accommodations",
                 "shopping",
                 "restaurants",
+                # 신규 API 테이블들
+                "pet_tour_info",
+                "classification_system_codes",
+                "area_based_sync_list",
+                "legal_dong_codes",
             ]
 
             for table in tables_to_check:

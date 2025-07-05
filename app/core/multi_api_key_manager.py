@@ -19,6 +19,9 @@ class APIProvider(Enum):
 
     KTO = "KTO"  # 한국관광공사
     KMA = "KMA"  # 기상청
+    WEATHER = "WEATHER"  # 날씨 API 제공자 추가
+    GOOGLE = "GOOGLE"  # 구글 API
+    NAVER = "NAVER"  # 네이버 API
 
 
 @dataclass

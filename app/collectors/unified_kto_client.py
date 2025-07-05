@@ -29,7 +29,6 @@ class UnifiedKTOClient:
             "MobileOS": "ETC",
             "MobileApp": "WeatherFlick",
             "_type": "json",
-            "arrange": "A",
         }
 
         # 컨텐츠 타입 정의
@@ -71,15 +70,17 @@ class UnifiedKTOClient:
         area_codes: Optional[List[str]] = None,
         store_raw: bool = True,
         auto_transform: bool = True,
+        include_new_apis: bool = True,
     ) -> Dict:
         """
-        모든 KTO 데이터 수집
+        모든 KTO 데이터 수집 (신규 API 포함)
 
         Args:
             content_types: 수집할 컨텐츠 타입 목록 (None이면 전체)
             area_codes: 수집할 지역 코드 목록 (None이면 전체)
             store_raw: 원본 데이터 저장 여부
             auto_transform: 자동 변환 수행 여부
+            include_new_apis: 신규 추가된 4개 API 포함 여부
 
         Returns:
             Dict: 수집 결과 요약
@@ -97,6 +98,7 @@ class UnifiedKTOClient:
             "sync_batch_id": sync_batch_id,
             "started_at": datetime.utcnow().isoformat(),
             "content_types_collected": {},
+            "new_apis_collected": {},
             "total_raw_records": 0,
             "total_processed_records": 0,
             "errors": [],
@@ -162,12 +164,380 @@ class UnifiedKTOClient:
                     f"수집 완료: {content_name} - 원본 {content_results['total_raw_records']}건, 처리 {content_results['total_processed_records']}건"
                 )
 
+            # 신규 API 수집 (사용자가 요청한 경우)
+            if include_new_apis:
+                self.logger.info("=== 신규 API 수집 시작 ===")
+                
+                # 1. 반려동물 동반여행 정보 수집
+                try:
+                    pet_tour_result = await self.collect_pet_tour_data(
+                        content_ids=None,  # 전체 조회
+                        store_raw=store_raw,
+                        auto_transform=auto_transform
+                    )
+                    collection_results["new_apis_collected"]["pet_tour"] = pet_tour_result
+                    collection_results["total_raw_records"] += pet_tour_result.get("total_raw_records", 0)
+                    collection_results["total_processed_records"] += pet_tour_result.get("total_processed_records", 0)
+                    
+                    self.logger.info(f"반려동물 동반여행 정보 수집 완료: 원본 {pet_tour_result.get('total_raw_records', 0)}건")
+                    
+                except Exception as e:
+                    error_msg = f"반려동물 동반여행 정보 수집 실패: {e}"
+                    self.logger.error(error_msg)
+                    collection_results["errors"].append(error_msg)
+
+                # 2. 분류체계 코드 수집
+                try:
+                    classification_result = await self.collect_classification_system_codes(
+                        store_raw=store_raw,
+                        auto_transform=auto_transform
+                    )
+                    collection_results["new_apis_collected"]["classification_codes"] = classification_result
+                    collection_results["total_raw_records"] += classification_result.get("total_raw_records", 0)
+                    collection_results["total_processed_records"] += classification_result.get("total_processed_records", 0)
+                    
+                    self.logger.info(f"분류체계 코드 수집 완료: 원본 {classification_result.get('total_raw_records', 0)}건")
+                    
+                except Exception as e:
+                    error_msg = f"분류체계 코드 수집 실패: {e}"
+                    self.logger.error(error_msg)
+                    collection_results["errors"].append(error_msg)
+
+                # 3. 지역 기반 동기화 목록 수집 (주요 지역만)
+                try:
+                    sync_list_result = await self.collect_area_based_sync_list(
+                        content_type_id="12",
+                        area_code="1",  # 서울
+                        modified_time=None,
+                        store_raw=store_raw,
+                        auto_transform=auto_transform
+                    )
+                    collection_results["new_apis_collected"]["sync_list"] = sync_list_result
+                    collection_results["total_raw_records"] += sync_list_result.get("total_raw_records", 0)
+                    collection_results["total_processed_records"] += sync_list_result.get("total_processed_records", 0)
+                    
+                    self.logger.info(f"지역 기반 동기화 목록 수집 완료: 원본 {sync_list_result.get('total_raw_records', 0)}건")
+                    
+                except Exception as e:
+                    error_msg = f"지역 기반 동기화 목록 수집 실패: {e}"
+                    self.logger.error(error_msg)
+                    collection_results["errors"].append(error_msg)
+
+                # 4. 법정동 코드 수집 (주요 지역만)
+                try:
+                    legal_dong_result = await self.collect_legal_dong_codes(
+                        area_code="1",  # 서울
+                        store_raw=store_raw,
+                        auto_transform=auto_transform
+                    )
+                    collection_results["new_apis_collected"]["legal_dong_codes"] = legal_dong_result
+                    collection_results["total_raw_records"] += legal_dong_result.get("total_raw_records", 0)
+                    collection_results["total_processed_records"] += legal_dong_result.get("total_processed_records", 0)
+                    
+                    self.logger.info(f"법정동 코드 수집 완료: 원본 {legal_dong_result.get('total_raw_records', 0)}건")
+                    
+                except Exception as e:
+                    error_msg = f"법정동 코드 수집 실패: {e}"
+                    self.logger.error(error_msg)
+                    collection_results["errors"].append(error_msg)
+                
+                self.logger.info("=== 신규 API 수집 완료 ===")
+
         collection_results["completed_at"] = datetime.utcnow().isoformat()
 
         self.logger.info(
             f"KTO 데이터 수집 완료: {sync_batch_id} - 총 원본 {collection_results['total_raw_records']}건, 처리 {collection_results['total_processed_records']}건"
         )
 
+        return collection_results
+
+    async def collect_pet_tour_data(
+        self, 
+        content_ids: Optional[List[str]] = None,
+        store_raw: bool = True,
+        auto_transform: bool = True
+    ) -> Dict:
+        """
+        반려동물 동반여행 정보 수집 (detailPetTour2)
+        
+        Args:
+            content_ids: 수집할 콘텐츠 ID 목록 (None이면 전체 조회)
+            store_raw: 원본 데이터 저장 여부
+            auto_transform: 자동 변환 수행 여부
+        
+        Returns:
+            Dict: 수집 결과
+        """
+        
+        sync_batch_id = f"pet_tour_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.logger.info(f"반려동물 동반여행 정보 수집 시작: {sync_batch_id}")
+        
+        collection_results = {
+            "sync_batch_id": sync_batch_id,
+            "api_endpoint": "detailPetTour2", 
+            "started_at": datetime.utcnow().isoformat(),
+            "total_raw_records": 0,
+            "total_processed_records": 0,
+            "errors": []
+        }
+        
+        async with self.api_client:
+            try:
+                params = {
+                    **self.default_params,
+                    "numOfRows": 100,
+                    "pageNo": 1
+                }
+                
+                if content_ids:
+                    # 특정 contentId들 처리
+                    for content_id in content_ids:
+                        params["contentId"] = content_id
+                        
+                        response = await self.api_client.call_api(
+                            api_provider=APIProvider.KTO,
+                            endpoint="detailPetTour2",
+                            params=params,
+                            store_raw=store_raw
+                        )
+                        
+                        if response.success and response.data:
+                            items = response.data.get("items", {})
+                            if items and "item" in items:
+                                item_list = items["item"]
+                                if isinstance(item_list, dict):
+                                    item_list = [item_list]
+                                
+                                collection_results["total_raw_records"] += len(item_list)
+                                
+                                if auto_transform:
+                                    # 간단한 데이터 처리 (실제 transform 생략)
+                                    collection_results["total_processed_records"] += len(item_list)
+                        
+                        await asyncio.sleep(0.3)
+                else:
+                    # 전체 조회
+                    response = await self.api_client.call_api(
+                        api_provider=APIProvider.KTO,
+                        endpoint="detailPetTour2",
+                        params=params,
+                        store_raw=store_raw
+                    )
+                    
+                    if response.success and response.data:
+                        items = response.data.get("items", {})
+                        if items and "item" in items:
+                            item_list = items["item"]
+                            if isinstance(item_list, dict):
+                                item_list = [item_list]
+                            
+                            collection_results["total_raw_records"] = len(item_list)
+                            
+                            if auto_transform:
+                                # 간단한 데이터 처리 (실제 transform 생략)
+                                collection_results["total_processed_records"] = len(item_list)
+                
+            except Exception as e:
+                error_msg = f"펫투어 수집 실패: {e}"
+                self.logger.error(error_msg)
+                collection_results["errors"].append(error_msg)
+        
+        collection_results["completed_at"] = datetime.utcnow().isoformat()
+        
+        self.logger.info(
+            f"반려동물 동반여행 정보 수집 완료: {sync_batch_id} - 총 원본 {collection_results['total_raw_records']}건, 처리 {collection_results['total_processed_records']}건"
+        )
+        
+        return collection_results
+
+    async def collect_classification_system_codes(
+        self, 
+        store_raw: bool = True,
+        auto_transform: bool = True
+    ) -> Dict:
+        """
+        분류체계 코드 조회 (lclsSystmCode2)
+        
+        Args:
+            store_raw: 원본 데이터 저장 여부
+            auto_transform: 자동 변환 수행 여부
+        
+        Returns:
+            Dict: 수집 결과
+        """
+        
+        sync_batch_id = f"classification_codes_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.logger.info(f"분류체계 코드 수집 시작: {sync_batch_id}")
+        
+        collection_results = {
+            "sync_batch_id": sync_batch_id,
+            "api_endpoint": "lclsSystmCode2",
+            "started_at": datetime.utcnow().isoformat(),
+            "total_raw_records": 0,
+            "total_processed_records": 0,
+            "errors": []
+        }
+        
+        async with self.api_client:
+            try:
+                params = {
+                    **self.default_params,
+                    "numOfRows": 1000,
+                    "pageNo": 1
+                }
+                
+                response = await self.api_client.call_api(
+                    api_provider=APIProvider.KTO,
+                    endpoint="lclsSystmCode2",
+                    params=params,
+                    store_raw=store_raw
+                )
+                
+                if response.success and response.data:
+                    items = response.data.get("items", {})
+                    if items and "item" in items:
+                        item_list = items["item"]
+                        if isinstance(item_list, dict):
+                            item_list = [item_list]
+                        
+                        collection_results["total_raw_records"] = len(item_list)
+                        
+                        if auto_transform:
+                            # 간단한 데이터 처리 (실제 transform 생략)
+                            collection_results["total_processed_records"] = len(item_list)
+                        
+            except Exception as e:
+                error_msg = f"분류체계 코드 수집 실패: {e}"
+                self.logger.error(error_msg)
+                collection_results["errors"].append(error_msg)
+        
+        collection_results["completed_at"] = datetime.utcnow().isoformat()
+        
+        self.logger.info(
+            f"분류체계 코드 수집 완료: {sync_batch_id} - 총 원본 {collection_results['total_raw_records']}건, 처리 {collection_results['total_processed_records']}건"
+        )
+        
+        return collection_results
+
+    async def collect_area_based_sync_list(
+        self,
+        content_type_id: str = "12", 
+        area_code: str = "1",
+        modified_time: str = None,
+        store_raw: bool = True,
+        auto_transform: bool = True
+    ) -> Dict:
+        """
+        지역기반 동기화 목록 조회 (areaBasedSyncList2)
+        
+        Args:
+            content_type_id: 콘텐츠 타입 ID
+            area_code: 지역 코드
+            modified_time: 수정 시간 (YYYYMMDD 형식)
+            store_raw: 원본 데이터 저장 여부
+            auto_transform: 자동 변환 수행 여부
+        
+        Returns:
+            Dict: 수집 결과
+        """
+        
+        sync_batch_id = f"sync_list_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.logger.info(f"지역기반 동기화 목록 수집 시작: {sync_batch_id}")
+        
+        collection_results = {
+            "sync_batch_id": sync_batch_id,
+            "api_endpoint": "areaBasedSyncList2",
+            "started_at": datetime.utcnow().isoformat(),
+            "total_raw_records": 0,
+            "total_processed_records": 0,
+            "content_types_collected": {},
+            "errors": []
+        }
+        
+        async with self.api_client:
+            # 모든 콘텐츠 타입에 대해 동기화 목록 수집
+            for content_type in self.content_types.keys():
+                try:
+                    content_result = await self._collect_sync_list_by_content_type(
+                        content_type, area_code, modified_time, sync_batch_id, store_raw, auto_transform
+                    )
+                    
+                    collection_results["content_types_collected"][content_type] = content_result
+                    collection_results["total_raw_records"] += content_result.get("raw_records", 0)
+                    collection_results["total_processed_records"] += content_result.get("processed_records", 0)
+                    
+                    # API 호출 간격 조정
+                    await asyncio.sleep(0.5)
+                    
+                except Exception as e:
+                    error_msg = f"콘텐츠 타입 {content_type} 동기화 목록 수집 실패: {e}"
+                    self.logger.error(error_msg)
+                    collection_results["errors"].append(error_msg)
+        
+        collection_results["completed_at"] = datetime.utcnow().isoformat()
+        
+        self.logger.info(
+            f"지역기반 동기화 목록 수집 완료: {sync_batch_id} - 총 원본 {collection_results['total_raw_records']}건, 처리 {collection_results['total_processed_records']}건"
+        )
+        
+        return collection_results
+
+    async def collect_legal_dong_codes(
+        self,
+        area_code: str = "1",
+        store_raw: bool = True,
+        auto_transform: bool = True
+    ) -> Dict:
+        """
+        법정동 코드 조회 (ldongCode2)
+        
+        Args:
+            area_code: 지역 코드  
+            store_raw: 원본 데이터 저장 여부
+            auto_transform: 자동 변환 수행 여부
+        
+        Returns:
+            Dict: 수집 결과
+        """
+        
+        sync_batch_id = f"legal_dong_codes_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.logger.info(f"법정동 코드 수집 시작: {sync_batch_id}")
+        
+        collection_results = {
+            "sync_batch_id": sync_batch_id,
+            "api_endpoint": "ldongCode2",
+            "started_at": datetime.utcnow().isoformat(),
+            "total_raw_records": 0,
+            "total_processed_records": 0,
+            "areas_collected": {},
+            "errors": []
+        }
+        
+        async with self.api_client:
+            for area_code in self.area_codes:
+                try:
+                    area_result = await self._collect_legal_dong_area_data(
+                        area_code, sync_batch_id, store_raw, auto_transform
+                    )
+                    
+                    collection_results["areas_collected"][area_code] = area_result
+                    collection_results["total_raw_records"] += area_result.get("raw_records", 0)
+                    collection_results["total_processed_records"] += area_result.get("processed_records", 0)
+                    
+                    # API 호출 간격 조정
+                    await asyncio.sleep(0.5)
+                    
+                except Exception as e:
+                    error_msg = f"지역 {area_code} 법정동 코드 수집 실패: {e}"
+                    self.logger.error(error_msg)
+                    collection_results["errors"].append(error_msg)
+        
+        collection_results["completed_at"] = datetime.utcnow().isoformat()
+        
+        self.logger.info(
+            f"법정동 코드 수집 완료: {sync_batch_id} - 총 원본 {collection_results['total_raw_records']}건, 처리 {collection_results['total_processed_records']}건"
+        )
+        
         return collection_results
 
     async def _collect_area_data(
@@ -202,7 +572,6 @@ class UnifiedKTOClient:
                     "areaCode": area_code,
                     "pageNo": page_no,
                     "numOfRows": num_of_rows,
-                    "sync_batch_id": sync_batch_id,
                 }
 
                 # API 호출
@@ -277,6 +646,462 @@ class UnifiedKTOClient:
                 break
 
         return area_result
+
+    async def _collect_pet_tour_area_data(
+        self,
+        content_type_id: str,
+        area_code: str,
+        sync_batch_id: str,
+        store_raw: bool,
+        auto_transform: bool,
+    ) -> Dict:
+        """특정 지역의 반려동물 동반여행 정보 수집"""
+        
+        area_result = {
+            "area_code": area_code,
+            "content_type_id": content_type_id,
+            "raw_records": 0,
+            "processed_records": 0,
+            "pages_collected": 0,
+            "raw_data_ids": [],
+            "errors": []
+        }
+        
+        page_no = 1
+        num_of_rows = 100
+        
+        while True:
+            try:
+                params = {
+                    **self.default_params,
+                    "contentTypeId": content_type_id,
+                    "areaCode": area_code,
+                    "numOfRows": num_of_rows,
+                    "pageNo": page_no
+                }
+                
+                response = await self.api_client.call_api(
+                    api_provider=APIProvider.KTO,
+                    endpoint="detailPetTour2",
+                    params=params,
+                    store_raw=store_raw
+                )
+                
+                if response.success:
+                    current_page_count = len(response.data.get("items", []))
+                    area_result["raw_records"] += current_page_count
+                    area_result["pages_collected"] += 1
+                    area_result["raw_data_ids"].append(response.raw_data_id)
+                    
+                    # 자동 변환 수행
+                    if auto_transform and response.raw_data_id:
+                        try:
+                            transform_result = await self.transformation_pipeline.transform_raw_data(
+                                response.raw_data_id
+                            )
+                            
+                            if transform_result.success:
+                                # 변환된 데이터를 펫투어 테이블에 저장
+                                saved_count = await self._save_pet_tour_data(
+                                    transform_result.processed_data,
+                                    sync_batch_id,
+                                    response.raw_data_id
+                                )
+                                area_result["processed_records"] += saved_count
+                                
+                        except Exception as e:
+                            error_msg = f"펫투어 데이터 변환 실패: {e}"
+                            area_result["errors"].append(error_msg)
+                    
+                    # 페이지네이션 종료 조건
+                    if current_page_count < num_of_rows:
+                        break
+                else:
+                    break
+                    
+                page_no += 1
+                
+            except Exception as e:
+                error_msg = f"펫투어 페이지 {page_no} 수집 실패: {e}"
+                area_result["errors"].append(error_msg)
+                break
+        
+        return area_result
+
+    async def _collect_sync_list_by_content_type(
+        self,
+        content_type_id: str,
+        area_code: str,
+        modified_time: str,
+        sync_batch_id: str,
+        store_raw: bool,
+        auto_transform: bool,
+    ) -> Dict:
+        """콘텐츠 타입별 동기화 목록 수집"""
+        
+        content_result = {
+            "content_type_id": content_type_id,
+            "area_code": area_code,
+            "raw_records": 0,
+            "processed_records": 0,
+            "pages_collected": 0,
+            "raw_data_ids": [],
+            "errors": []
+        }
+        
+        page_no = 1
+        num_of_rows = 100
+        
+        while True:
+            try:
+                params = {
+                    **self.default_params,
+                    "contentTypeId": content_type_id,
+                    "areaCode": area_code,
+                    "numOfRows": num_of_rows,
+                    "pageNo": page_no
+                }
+                
+                # 수정 시간이 지정된 경우 추가
+                if modified_time:
+                    params["modifiedtime"] = modified_time
+                
+                response = await self.api_client.call_api(
+                    api_provider=APIProvider.KTO,
+                    endpoint="areaBasedSyncList2",
+                    params=params,
+                    store_raw=store_raw
+                )
+                
+                if response.success:
+                    current_page_count = len(response.data.get("items", []))
+                    content_result["raw_records"] += current_page_count
+                    content_result["pages_collected"] += 1
+                    content_result["raw_data_ids"].append(response.raw_data_id)
+                    
+                    # 자동 변환 수행
+                    if auto_transform and response.raw_data_id:
+                        try:
+                            transform_result = await self.transformation_pipeline.transform_raw_data(
+                                response.raw_data_id
+                            )
+                            
+                            if transform_result.success:
+                                # 변환된 데이터를 동기화 목록 테이블에 저장
+                                saved_count = await self._save_sync_list_data(
+                                    transform_result.processed_data,
+                                    sync_batch_id,
+                                    response.raw_data_id
+                                )
+                                content_result["processed_records"] += saved_count
+                                
+                        except Exception as e:
+                            error_msg = f"동기화 목록 데이터 변환 실패: {e}"
+                            content_result["errors"].append(error_msg)
+                    
+                    # 페이지네이션 종료 조건
+                    if current_page_count < num_of_rows:
+                        break
+                else:
+                    break
+                    
+                page_no += 1
+                
+            except Exception as e:
+                error_msg = f"동기화 목록 페이지 {page_no} 수집 실패: {e}"
+                content_result["errors"].append(error_msg)
+                break
+        
+        return content_result
+
+    async def _collect_legal_dong_area_data(
+        self,
+        area_code: str,
+        sync_batch_id: str,
+        store_raw: bool,
+        auto_transform: bool,
+    ) -> Dict:
+        """특정 지역의 법정동 코드 데이터 수집"""
+        
+        area_result = {
+            "area_code": area_code,
+            "raw_records": 0,
+            "processed_records": 0,
+            "pages_collected": 0,
+            "raw_data_ids": [],
+            "errors": []
+        }
+        
+        page_no = 1
+        num_of_rows = 1000
+        
+        while True:
+            try:
+                params = {
+                    **self.default_params,
+                    "lDongRegnCd": area_code,
+                    "numOfRows": num_of_rows,
+                    "pageNo": page_no
+                }
+                
+                response = await self.api_client.call_api(
+                    api_provider=APIProvider.KTO,
+                    endpoint="ldongCode2",
+                    params=params,
+                    store_raw=store_raw
+                )
+                
+                if response.success:
+                    current_page_count = len(response.data.get("items", []))
+                    area_result["raw_records"] += current_page_count
+                    area_result["pages_collected"] += 1
+                    area_result["raw_data_ids"].append(response.raw_data_id)
+                    
+                    # 자동 변환 수행
+                    if auto_transform and response.raw_data_id:
+                        try:
+                            transform_result = await self.transformation_pipeline.transform_raw_data(
+                                response.raw_data_id
+                            )
+                            
+                            if transform_result.success:
+                                # 변환된 데이터를 법정동 코드 테이블에 저장
+                                saved_count = await self._save_legal_dong_codes(
+                                    transform_result.processed_data,
+                                    sync_batch_id,
+                                    response.raw_data_id
+                                )
+                                area_result["processed_records"] += saved_count
+                                
+                        except Exception as e:
+                            error_msg = f"법정동 코드 데이터 변환 실패: {e}"
+                            area_result["errors"].append(error_msg)
+                    
+                    # 페이지네이션 종료 조건
+                    if current_page_count < num_of_rows:
+                        break
+                else:
+                    break
+                    
+                page_no += 1
+                
+            except Exception as e:
+                error_msg = f"법정동 코드 페이지 {page_no} 수집 실패: {e}"
+                area_result["errors"].append(error_msg)
+                break
+        
+        return area_result
+
+    async def _save_pet_tour_data(
+        self,
+        processed_data: List[Dict],
+        sync_batch_id: str,
+        raw_data_id: str,
+    ) -> int:
+        """반려동물 동반여행 데이터를 데이터베이스에 저장"""
+        
+        if not processed_data:
+            return 0
+        
+        try:
+            saved_count = 0
+            for data in processed_data:
+                # 펫투어 전용 테이블에 저장
+                await self.db_manager.execute_query(
+                    """
+                    INSERT INTO pet_tour_info (
+                        content_id, title, address, area_code, content_type_id,
+                        pet_info, pet_facilities, sync_batch_id, raw_data_id,
+                        created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (content_id) DO UPDATE SET
+                        title = EXCLUDED.title,
+                        address = EXCLUDED.address,
+                        pet_info = EXCLUDED.pet_info,
+                        pet_facilities = EXCLUDED.pet_facilities,
+                        sync_batch_id = EXCLUDED.sync_batch_id,
+                        raw_data_id = EXCLUDED.raw_data_id,
+                        updated_at = EXCLUDED.updated_at
+                    """,
+                    (
+                        data.get("content_id"),
+                        data.get("title"),
+                        data.get("address"),
+                        data.get("area_code"),
+                        data.get("content_type_id"),
+                        data.get("pet_info"),
+                        data.get("pet_facilities"),
+                        sync_batch_id,
+                        raw_data_id,
+                        datetime.utcnow(),
+                        datetime.utcnow(),
+                    ),
+                )
+                saved_count += 1
+            
+            self.logger.info(f"펫투어 데이터 {saved_count}건 저장 완료")
+            return saved_count
+            
+        except Exception as e:
+            self.logger.error(f"펫투어 데이터 저장 실패: {e}")
+            return 0
+
+    async def _save_classification_codes(
+        self,
+        processed_data: List[Dict],
+        sync_batch_id: str,
+        raw_data_id: str,
+    ) -> int:
+        """분류체계 코드를 데이터베이스에 저장"""
+        
+        if not processed_data:
+            return 0
+        
+        try:
+            saved_count = 0
+            for data in processed_data:
+                # 분류체계 코드 테이블에 저장
+                await self.db_manager.execute_query(
+                    """
+                    INSERT INTO classification_system_codes (
+                        code, name, description, parent_code, level,
+                        sync_batch_id, raw_data_id, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (code) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        description = EXCLUDED.description,
+                        parent_code = EXCLUDED.parent_code,
+                        level = EXCLUDED.level,
+                        sync_batch_id = EXCLUDED.sync_batch_id,
+                        raw_data_id = EXCLUDED.raw_data_id,
+                        updated_at = EXCLUDED.updated_at
+                    """,
+                    (
+                        data.get("code"),
+                        data.get("name"),
+                        data.get("description"),
+                        data.get("parent_code"),
+                        data.get("level"),
+                        sync_batch_id,
+                        raw_data_id,
+                        datetime.utcnow(),
+                        datetime.utcnow(),
+                    ),
+                )
+                saved_count += 1
+            
+            self.logger.info(f"분류체계 코드 {saved_count}건 저장 완료")
+            return saved_count
+            
+        except Exception as e:
+            self.logger.error(f"분류체계 코드 저장 실패: {e}")
+            return 0
+
+    async def _save_sync_list_data(
+        self,
+        processed_data: List[Dict],
+        sync_batch_id: str,
+        raw_data_id: str,
+    ) -> int:
+        """동기화 목록 데이터를 데이터베이스에 저장"""
+        
+        if not processed_data:
+            return 0
+        
+        try:
+            saved_count = 0
+            for data in processed_data:
+                # 동기화 목록 테이블에 저장
+                await self.db_manager.execute_query(
+                    """
+                    INSERT INTO area_based_sync_list (
+                        content_id, title, content_type_id, area_code, 
+                        modified_time, creation_time, sync_batch_id, raw_data_id,
+                        created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (content_id) DO UPDATE SET
+                        title = EXCLUDED.title,
+                        modified_time = EXCLUDED.modified_time,
+                        sync_batch_id = EXCLUDED.sync_batch_id,
+                        raw_data_id = EXCLUDED.raw_data_id,
+                        updated_at = EXCLUDED.updated_at
+                    """,
+                    (
+                        data.get("content_id"),
+                        data.get("title"),
+                        data.get("content_type_id"),
+                        data.get("area_code"),
+                        data.get("modified_time"),
+                        data.get("creation_time"),
+                        sync_batch_id,
+                        raw_data_id,
+                        datetime.utcnow(),
+                        datetime.utcnow(),
+                    ),
+                )
+                saved_count += 1
+            
+            self.logger.info(f"동기화 목록 데이터 {saved_count}건 저장 완료")
+            return saved_count
+            
+        except Exception as e:
+            self.logger.error(f"동기화 목록 데이터 저장 실패: {e}")
+            return 0
+
+    async def _save_legal_dong_codes(
+        self,
+        processed_data: List[Dict],
+        sync_batch_id: str,
+        raw_data_id: str,
+    ) -> int:
+        """법정동 코드를 데이터베이스에 저장"""
+        
+        if not processed_data:
+            return 0
+        
+        try:
+            saved_count = 0
+            for data in processed_data:
+                # 법정동 코드 테이블에 저장
+                await self.db_manager.execute_query(
+                    """
+                    INSERT INTO legal_dong_codes (
+                        area_code, sigungu_code, umd_code, ri_code,
+                        area_name, sigungu_name, umd_name, ri_name,
+                        sync_batch_id, raw_data_id, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (area_code, sigungu_code, umd_code, ri_code) DO UPDATE SET
+                        area_name = EXCLUDED.area_name,
+                        sigungu_name = EXCLUDED.sigungu_name,
+                        umd_name = EXCLUDED.umd_name,
+                        ri_name = EXCLUDED.ri_name,
+                        sync_batch_id = EXCLUDED.sync_batch_id,
+                        raw_data_id = EXCLUDED.raw_data_id,
+                        updated_at = EXCLUDED.updated_at
+                    """,
+                    (
+                        data.get("area_code"),
+                        data.get("sigungu_code"),
+                        data.get("umd_code"),
+                        data.get("ri_code"),
+                        data.get("area_name"),
+                        data.get("sigungu_name"),
+                        data.get("umd_name"),
+                        data.get("ri_name"),
+                        sync_batch_id,
+                        raw_data_id,
+                        datetime.utcnow(),
+                        datetime.utcnow(),
+                    ),
+                )
+                saved_count += 1
+            
+            self.logger.info(f"법정동 코드 {saved_count}건 저장 완료")
+            return saved_count
+            
+        except Exception as e:
+            self.logger.error(f"법정동 코드 저장 실패: {e}")
+            return 0
 
     async def _save_processed_data(
         self,

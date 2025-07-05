@@ -22,16 +22,6 @@ from app.core.database_manager_extension import get_extended_database_manager
 from app.core.multi_api_key_manager import get_api_key_manager, APIProvider
 
 
-class APIProvider(Enum):
-    """API 제공자 열거형"""
-
-    KTO = "KTO"
-    KMA = "KMA"
-    WEATHER = "WEATHER"  # 날씨 API 제공자 추가
-    GOOGLE = "GOOGLE"
-    NAVER = "NAVER"
-
-
 @dataclass
 class APIResponse:
     """API 응답 데이터 클래스"""
@@ -348,18 +338,44 @@ class UnifiedAPIClient:
 
             # API별 성공 응답 확인
             if api_provider in [APIProvider.KTO, APIProvider.KMA]:
-                result_code = (
-                    response_data.get("response", {})
-                    .get("header", {})
-                    .get("resultCode")
-                )
-                if result_code != "00":
-                    result_msg = (
+                # 디버깅을 위한 로그 추가
+                self.logger.debug(f"Response data type: {type(response_data)}")
+                self.logger.debug(f"Response data keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'Not dict'}")
+                
+                # 정상 응답 형태 확인
+                if "response" in response_data:
+                    # 정상 JSON 응답
+                    result_code = (
                         response_data.get("response", {})
                         .get("header", {})
-                        .get("resultMsg", "알 수 없는 오류")
+                        .get("resultCode")
                     )
+                    
+                    self.logger.debug(f"Normal response result_code: {result_code}")
+                    
+                    if result_code not in ["00", "0000"]:
+                        result_msg = (
+                            response_data.get("response", {})
+                            .get("header", {})
+                            .get("resultMsg", "알 수 없는 오류")
+                        )
+                        raise ValueError(f"API 오류 ({result_code}): {result_msg}")
+                        
+                    # KTO/KMA API는 body 부분만 반환
+                    return response_data.get("response", {}).get("body", {})
+                    
+                elif "resultCode" in response_data:
+                    # 오류 응답 (XML에서 JSON으로 파싱된 경우)
+                    result_code = response_data.get("resultCode")
+                    result_msg = response_data.get("resultMsg", "알 수 없는 오류")
+                    
+                    self.logger.debug(f"Error response result_code: {result_code}")
+                    
                     raise ValueError(f"API 오류 ({result_code}): {result_msg}")
+                    
+                else:
+                    raise ValueError(f"알 수 없는 응답 형태: {response_data}")
+                
             elif api_provider == APIProvider.WEATHER:
                 # OpenWeatherMap API 오류 확인
                 if "cod" in response_data:
