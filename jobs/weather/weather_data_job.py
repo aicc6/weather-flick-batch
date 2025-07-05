@@ -299,7 +299,7 @@ class WeatherDataJob(BaseJob):
                 data["region_name"] = region_name
                 # 예보 테이블에 저장
                 await self.db_manager.execute_query(
-                    "INSERT INTO weather_forecast (region_code, forecast_date, min_temp, max_temp, raw_data_id) VALUES (%s, %s, %s, %s, %s)",
+                    "INSERT INTO weather_forecasts (region_code, forecast_date, forecast_time, temperature, min_temp, max_temp, weather_condition, forecast_type, raw_data_id, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         self._get_region_code_from_name(region_name),
                         data.get("forecast_date"),

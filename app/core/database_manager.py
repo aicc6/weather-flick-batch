@@ -351,7 +351,7 @@ class SyncDatabaseManager(BaseDatabaseManager):
 
         try:
             return self.upsert(
-                "weather_forecast",
+                "weather_forecasts",
                 formatted_data,
                 ["region_code", "forecast_date", "forecast_time"],
             )

@@ -205,7 +205,7 @@ CREATE TABLE IF NOT EXISTS data_quality_thresholds (
 INSERT INTO data_quality_thresholds (table_name, completeness_threshold, validity_threshold, consistency_threshold, overall_threshold)
 VALUES 
     ('tourist_attractions', 0.90, 0.95, 0.99, 0.85),
-    ('weather_forecast', 0.95, 0.98, 0.99, 0.90),
+    ('weather_forecasts', 0.95, 0.98, 0.99, 0.90),
     ('accommodations', 0.85, 0.90, 0.95, 0.80),
     ('festivals_events', 0.80, 0.90, 0.95, 0.75)
 ON CONFLICT (table_name) DO NOTHING;

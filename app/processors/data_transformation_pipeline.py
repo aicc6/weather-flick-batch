@@ -495,7 +495,7 @@ class KMADataTransformer(BaseDataTransformer):
 
         if target_table == "current_weather":
             return self._transform_current_weather(items)
-        elif target_table == "weather_forecast":
+        elif target_table == "weather_forecasts":
             return self._transform_weather_forecast(items)
         else:
             raise ValueError(f"지원하지 않는 테이블: {target_table}")
