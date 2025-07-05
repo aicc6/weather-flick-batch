@@ -260,6 +260,67 @@ class MultiAPIKeyManager:
             f"🔄 {provider.value} API 키 순환: 인덱스 {self.current_key_index[provider]}"
         )
 
+    def are_all_keys_rate_limited(self, provider: APIProvider) -> bool:
+        """특정 제공자의 모든 키가 제한되었는지 확인"""
+        if provider not in self.api_keys or not self.api_keys[provider]:
+            return True
+        
+        current_time = datetime.now()
+        
+        for key_info in self.api_keys[provider]:
+            # 활성화된 키가 있고, 제한 시간이 지났거나 제한되지 않은 키가 있으면 False
+            if (key_info.is_active and 
+                (key_info.rate_limit_reset_time is None or 
+                 current_time >= key_info.rate_limit_reset_time)):
+                return False
+        
+        return True
+    
+    def get_next_reset_time(self, provider: APIProvider) -> Optional[datetime]:
+        """특정 제공자의 다음 제한 해제 시간 반환"""
+        if provider not in self.api_keys or not self.api_keys[provider]:
+            return None
+        
+        earliest_reset = None
+        
+        for key_info in self.api_keys[provider]:
+            if key_info.rate_limit_reset_time:
+                if earliest_reset is None or key_info.rate_limit_reset_time < earliest_reset:
+                    earliest_reset = key_info.rate_limit_reset_time
+        
+        return earliest_reset
+    
+    def get_rate_limit_status(self, provider: APIProvider) -> Dict:
+        """API 키 제한 상태 상세 정보 반환"""
+        if provider not in self.api_keys:
+            return {"all_limited": True, "active_keys": 0, "total_keys": 0, "next_reset": None}
+        
+        keys = self.api_keys[provider]
+        current_time = datetime.now()
+        
+        total_keys = len(keys)
+        active_keys = 0
+        limited_keys = 0
+        next_reset = None
+        
+        for key_info in keys:
+            if key_info.is_active:
+                if (key_info.rate_limit_reset_time is None or 
+                    current_time >= key_info.rate_limit_reset_time):
+                    active_keys += 1
+                else:
+                    limited_keys += 1
+                    if next_reset is None or key_info.rate_limit_reset_time < next_reset:
+                        next_reset = key_info.rate_limit_reset_time
+        
+        return {
+            "all_limited": active_keys == 0,
+            "active_keys": active_keys,
+            "limited_keys": limited_keys,
+            "total_keys": total_keys,
+            "next_reset": next_reset
+        }
+
     def reset_daily_usage(self):
         """일일 사용량 초기화"""
         current_time = datetime.now()

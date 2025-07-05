@@ -641,7 +641,7 @@ class DataTransformationPipeline:
 
         try:
             # 1. 원본 데이터 로드
-            raw_data = await self.db_manager.get_raw_data(raw_data_id)
+            raw_data = self.db_manager.get_raw_data(raw_data_id)
             if not raw_data:
                 return TransformationResult.error_result(
                     "원본 데이터를 찾을 수 없습니다"
@@ -691,7 +691,7 @@ class DataTransformationPipeline:
                 "quality_score": validation_result.quality_score,
             }
 
-            await self.db_manager.log_transformation(transformation_log)
+            self.db_manager.log_transformation(transformation_log)
 
             self.logger.info(
                 f"데이터 변환 완료: {raw_data_id} -> {len(processed_data)}건 (품질점수: {validation_result.quality_score:.1f})"
@@ -726,7 +726,7 @@ class DataTransformationPipeline:
                         ]
                     },
                 }
-                await self.db_manager.log_transformation(error_log)
+                self.db_manager.log_transformation(error_log)
             except:
                 pass  # 로그 기록 실패는 무시
 

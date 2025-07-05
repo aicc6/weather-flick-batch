@@ -65,6 +65,16 @@ class AWSConfig:
 
 
 @dataclass
+class RedisConfig:
+    """Redis 설정"""
+    
+    host: str
+    port: int
+    password: str
+    db: int
+
+
+@dataclass
 class MonitoringConfig:
     """모니터링 설정"""
 
@@ -212,6 +222,16 @@ def get_aws_settings() -> AWSConfig:
         secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", ""),
         region=os.getenv("AWS_REGION", "ap-northeast-2"),
         s3_bucket=os.getenv("AWS_S3_BUCKET", ""),
+    )
+
+
+def get_redis_config() -> RedisConfig:
+    """Redis 설정 조회"""
+    return RedisConfig(
+        host=os.getenv("REDIS_HOST", "localhost"),
+        port=int(os.getenv("REDIS_PORT", "6379")),
+        password=os.getenv("REDIS_PASSWORD", ""),
+        db=int(os.getenv("REDIS_DB", "0")),
     )
 
 

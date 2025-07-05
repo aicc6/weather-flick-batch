@@ -47,16 +47,26 @@ class DatabaseManagerExtension:
         )
 
         try:
-            # INSERT...RETURNING 쿼리를 위한 특별한 처리
-            with self.db_manager.get_cursor() as cursor:
-                cursor.execute(query, params)
-                result = cursor.fetchone()
-                if result:
-                    raw_data_id = str(result["id"])
+            # execute_query 메서드 사용 (RETURNING 절 처리)
+            result = self.db_manager.execute_query(query, params)
+            
+            # 결과 형태에 따른 처리
+            if isinstance(result, list) and len(result) > 0:
+                # fetch_all 형태로 반환된 경우
+                first_result = result[0]
+                if "id" in first_result:
+                    raw_data_id = str(first_result["id"])
                     self.logger.debug(f"원본 데이터 삽입 완료: {raw_data_id}")
                     return raw_data_id
-                else:
-                    raise Exception("원본 데이터 삽입 결과를 받을 수 없습니다")
+            elif isinstance(result, dict) and "id" in result:
+                # fetch_one 형태로 반환된 경우
+                raw_data_id = str(result["id"])
+                self.logger.debug(f"원본 데이터 삽입 완료: {raw_data_id}")
+                return raw_data_id
+            
+            # 결과가 올바르지 않은 경우
+            self.logger.error(f"예상치 못한 결과 형태: {type(result)} - {result}")
+            raise Exception("원본 데이터 삽입 결과를 받을 수 없습니다")
 
         except Exception as e:
             self.logger.error(f"원본 데이터 삽입 실패: {e}")

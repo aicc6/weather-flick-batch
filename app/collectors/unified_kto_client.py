@@ -13,6 +13,7 @@ from typing import Dict, List, Optional
 from app.core.unified_api_client import get_unified_api_client, APIProvider
 from app.processors.data_transformation_pipeline import get_transformation_pipeline
 from app.core.database_manager_extension import get_extended_database_manager
+from app.core.multi_api_key_manager import get_api_key_manager
 
 
 class UnifiedKTOClient:
@@ -23,6 +24,7 @@ class UnifiedKTOClient:
         self.api_client = get_unified_api_client()
         self.transformation_pipeline = get_transformation_pipeline()
         self.db_manager = get_extended_database_manager()
+        self.key_manager = get_api_key_manager()
 
         # 기본 파라미터 설정
         self.default_params = {
@@ -71,6 +73,8 @@ class UnifiedKTOClient:
         store_raw: bool = True,
         auto_transform: bool = True,
         include_new_apis: bool = True,
+        include_hierarchical_regions: bool = False,
+        use_priority_sorting: bool = False,
     ) -> Dict:
         """
         모든 KTO 데이터 수집 (신규 API 포함)
@@ -81,6 +85,8 @@ class UnifiedKTOClient:
             store_raw: 원본 데이터 저장 여부
             auto_transform: 자동 변환 수행 여부
             include_new_apis: 신규 추가된 4개 API 포함 여부
+            include_hierarchical_regions: 계층적 지역코드 수집 포함 여부
+            use_priority_sorting: 데이터 부족 순으로 우선순위 정렬 여부
 
         Returns:
             Dict: 수집 결과 요약
@@ -89,14 +95,64 @@ class UnifiedKTOClient:
         if content_types is None:
             content_types = list(self.content_types.keys())
 
+        # 우선순위 정렬 사용 시 데이터 부족 순으로 정렬
+        if use_priority_sorting:
+            from app.core.data_priority_manager import get_priority_manager
+            priority_manager = get_priority_manager()
+            
+            # 컨텐츠 타입을 데이터 부족 순으로 정렬
+            priority_list = priority_manager.get_priority_sorted_content_types(content_types)
+            content_types = [item[0] for item in priority_list]  # 우선순위 순서로 재정렬
+            
+            self.logger.info(f"🎯 우선순위 정렬 활성화: {len(content_types)}개 컨텐츠 타입")
+            for rank, (content_type, count, name) in enumerate(priority_list, 1):
+                urgency = "🔥" if count == 0 else "⚠️" if count < 1000 else "✅"
+                self.logger.info(f"  {rank}. {name} (타입 {content_type}): {count:,}개 {urgency}")
+
         if area_codes is None:
             area_codes = self.area_codes
 
+        # API 제한 상태 확인 - 모든 KTO API 키가 제한되었는지 확인
+        # 모든 키가 제한된 경우 작업을 건너뛰고 다음 배치 실행 시간까지 대기
+        if self.key_manager.are_all_keys_rate_limited(APIProvider.KTO):
+            next_reset_time = self.key_manager.get_next_reset_time(APIProvider.KTO)
+            rate_limit_status = self.key_manager.get_rate_limit_status(APIProvider.KTO)
+            
+            error_msg = (
+                f"모든 KTO API 키가 제한되어 있습니다. "
+                f"활성 키: {rate_limit_status['active_keys']}/{rate_limit_status['total_keys']}, "
+                f"제한된 키: {rate_limit_status['limited_keys']}개"
+            )
+            
+            if next_reset_time:
+                time_until_reset = next_reset_time - datetime.now()
+                hours = int(time_until_reset.total_seconds() // 3600)
+                minutes = int((time_until_reset.total_seconds() % 3600) // 60)
+                error_msg += f" 다음 재시도 가능 시간: {next_reset_time.strftime('%Y-%m-%d %H:%M:%S')} (약 {hours}시간 {minutes}분 후)"
+            
+            self.logger.warning(error_msg)
+            
+            return {
+                "sync_batch_id": f"kto_sync_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                "started_at": datetime.utcnow().isoformat(),
+                "completed_at": datetime.utcnow().isoformat(),
+                "status": "skipped",
+                "reason": "all_api_keys_rate_limited",
+                "next_retry_time": next_reset_time.isoformat() if next_reset_time else None,
+                "rate_limit_status": rate_limit_status,
+                "content_types_collected": {},
+                "new_apis_collected": {},
+                "total_raw_records": 0,
+                "total_processed_records": 0,
+                "errors": [error_msg],
+            }
+        
         sync_batch_id = f"kto_sync_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
         collection_results = {
             "sync_batch_id": sync_batch_id,
             "started_at": datetime.utcnow().isoformat(),
+            "status": "running",
             "content_types_collected": {},
             "new_apis_collected": {},
             "total_raw_records": 0,
@@ -243,7 +299,32 @@ class UnifiedKTOClient:
                 
                 self.logger.info("=== 신규 API 수집 완료 ===")
 
+            # 5. 계층적 지역코드 수집 (옵션)
+            if include_hierarchical_regions:
+                self.logger.info("=== 계층적 지역코드 수집 시작 ===")
+                try:
+                    hierarchical_result = await self.collect_hierarchical_area_codes(
+                        force_update=False,
+                        store_raw=store_raw
+                    )
+                    collection_results["hierarchical_regions_collected"] = hierarchical_result
+                    
+                    # 수집 통계에 추가
+                    provinces_count = hierarchical_result.get("total_provinces", 0)
+                    districts_count = hierarchical_result.get("total_districts", 0)
+                    collection_results["total_raw_records"] += provinces_count + districts_count
+                    
+                    self.logger.info(f"계층적 지역코드 수집 완료: 시도 {provinces_count}개, 시군구 {districts_count}개")
+                    
+                except Exception as e:
+                    error_msg = f"계층적 지역코드 수집 실패: {e}"
+                    self.logger.error(error_msg)
+                    collection_results["errors"].append(error_msg)
+                
+                self.logger.info("=== 계층적 지역코드 수집 완료 ===")
+
         collection_results["completed_at"] = datetime.utcnow().isoformat()
+        collection_results["status"] = "completed"
 
         self.logger.info(
             f"KTO 데이터 수집 완료: {sync_batch_id} - 총 원본 {collection_results['total_raw_records']}건, 처리 {collection_results['total_processed_records']}건"
@@ -539,6 +620,253 @@ class UnifiedKTOClient:
         )
         
         return collection_results
+
+    async def collect_hierarchical_area_codes(
+        self, 
+        force_update: bool = False,
+        store_raw: bool = True
+    ) -> Dict:
+        """
+        계층적 지역코드 완전 수집 (시도 + 시군구)
+        
+        Args:
+            force_update: 기존 데이터 무시하고 강제 업데이트
+            store_raw: 원본 데이터 저장 여부
+            
+        Returns:
+            Dict: 수집 결과
+        """
+        sync_batch_id = f"area_codes_hierarchical_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        collection_results = {
+            "sync_batch_id": sync_batch_id,
+            "started_at": datetime.utcnow().isoformat(),
+            "provinces_collected": {},  # 시도 데이터
+            "districts_collected": {},  # 시군구 데이터
+            "total_provinces": 0,
+            "total_districts": 0,
+            "errors": []
+        }
+        
+        self.logger.info(f"계층적 지역코드 수집 시작: {sync_batch_id}")
+        
+        async with self.api_client:
+            try:
+                # 1단계: 전체 시도 코드 수집
+                self.logger.info("1단계: 시도 코드 수집")
+                provinces_result = await self._collect_province_codes(sync_batch_id, store_raw)
+                collection_results["provinces_collected"] = provinces_result
+                collection_results["total_provinces"] = provinces_result.get("total_records", 0)
+                
+                # 2단계: 각 시도별 시군구 코드 수집
+                self.logger.info("2단계: 시군구 코드 수집")
+                province_codes = provinces_result.get("province_codes", [])
+                
+                for province_code in province_codes:
+                    try:
+                        district_result = await self._collect_district_codes(
+                            province_code, sync_batch_id, store_raw
+                        )
+                        collection_results["districts_collected"][province_code] = district_result
+                        collection_results["total_districts"] += district_result.get("total_records", 0)
+                        
+                        # API 호출 간격 조정
+                        await asyncio.sleep(0.5)
+                        
+                    except Exception as e:
+                        error_msg = f"지역 {province_code} 시군구 수집 실패: {e}"
+                        self.logger.error(error_msg)
+                        collection_results["errors"].append(error_msg)
+                
+                # 3단계: 데이터베이스 저장 및 업데이트
+                await self._save_hierarchical_region_data(collection_results)
+                
+            except Exception as e:
+                error_msg = f"계층적 지역코드 수집 실패: {e}"
+                self.logger.error(error_msg)
+                collection_results["errors"].append(error_msg)
+        
+        collection_results["completed_at"] = datetime.utcnow().isoformat()
+        
+        self.logger.info(
+            f"계층적 지역코드 수집 완료: 시도 {collection_results['total_provinces']}개, "
+            f"시군구 {collection_results['total_districts']}개"
+        )
+        
+        return collection_results
+
+    async def _collect_province_codes(self, sync_batch_id: str, store_raw: bool) -> Dict:
+        """시도 코드 수집"""
+        result = {
+            "total_records": 0,
+            "province_codes": [],
+            "raw_data_ids": [],
+            "errors": []
+        }
+        
+        try:
+            params = {
+                **self.default_params,
+                "numOfRows": 20  # 시도는 17개이므로 충분
+            }
+            
+            response = await self.api_client.call_api(
+                api_provider=APIProvider.KTO,
+                endpoint="areaCode2",
+                params=params,
+                store_raw=store_raw
+            )
+            
+            if response.success and response.data:
+                items = response.data.get("items", {}).get("item", [])
+                if not isinstance(items, list):
+                    items = [items]
+                
+                result["total_records"] = len(items)
+                result["province_codes"] = [item.get("code") for item in items]
+                
+                if response.raw_data_id:
+                    result["raw_data_ids"].append(response.raw_data_id)
+                
+                self.logger.info(f"시도 코드 {len(items)}개 수집 완료")
+                
+        except Exception as e:
+            error_msg = f"시도 코드 수집 실패: {e}"
+            result["errors"].append(error_msg)
+            self.logger.error(error_msg)
+        
+        return result
+
+    async def _collect_district_codes(self, province_code: str, sync_batch_id: str, store_raw: bool) -> Dict:
+        """특정 시도의 시군구 코드 수집"""
+        result = {
+            "province_code": province_code,
+            "total_records": 0,
+            "district_codes": [],
+            "raw_data_ids": [],
+            "errors": []
+        }
+        
+        try:
+            params = {
+                **self.default_params,
+                "areaCode": province_code,
+                "numOfRows": 50  # 경기도가 31개로 가장 많음
+            }
+            
+            response = await self.api_client.call_api(
+                api_provider=APIProvider.KTO,
+                endpoint="areaCode2", 
+                params=params,
+                store_raw=store_raw
+            )
+            
+            if response.success and response.data:
+                items = response.data.get("items", {}).get("item", [])
+                if not isinstance(items, list):
+                    items = [items]
+                
+                result["total_records"] = len(items)
+                result["district_codes"] = [
+                    {"code": item.get("code"), "name": item.get("name")} 
+                    for item in items
+                ]
+                
+                if response.raw_data_id:
+                    result["raw_data_ids"].append(response.raw_data_id)
+                
+                self.logger.info(f"지역 {province_code} 시군구 {len(items)}개 수집 완료")
+                
+        except Exception as e:
+            error_msg = f"지역 {province_code} 시군구 수집 실패: {e}"
+            result["errors"].append(error_msg)
+            self.logger.error(error_msg)
+        
+        return result
+
+    async def _save_hierarchical_region_data(self, collection_results: Dict):
+        """수집된 계층적 지역 데이터를 데이터베이스에 저장"""
+        try:
+            provinces_data = collection_results.get("provinces_collected", {})
+            districts_data = collection_results.get("districts_collected", {})
+            
+            saved_count = 0
+            
+            # 1. 시도 데이터 저장 (regions 테이블에 직접 저장)
+            if provinces_data.get("province_codes"):
+                for province_code in provinces_data["province_codes"]:
+                    try:
+                        # 시도명 매핑
+                        province_names = {
+                            "1": "서울특별시", "2": "인천광역시", "3": "대전광역시", 
+                            "4": "대구광역시", "5": "광주광역시", "6": "부산광역시", 
+                            "7": "울산광역시", "8": "세종특별자치시", "31": "경기도", 
+                            "32": "강원특별자치도", "33": "충청북도", "34": "충청남도",
+                            "35": "경상북도", "36": "경상남도", "37": "전북특별자치도", 
+                            "38": "전라남도", "39": "제주도"
+                        }
+                        
+                        province_name = province_names.get(province_code, f"지역{province_code}")
+                        
+                        # regions 테이블에 UPSERT
+                        upsert_query = """
+                            INSERT INTO regions (region_code, region_name, parent_region_code, region_level, created_at, updated_at)
+                            VALUES (%s, %s, %s, %s, NOW(), NOW())
+                            ON CONFLICT (region_code) 
+                            DO UPDATE SET 
+                                region_name = EXCLUDED.region_name,
+                                parent_region_code = EXCLUDED.parent_region_code,
+                                region_level = EXCLUDED.region_level,
+                                updated_at = NOW()
+                        """
+                        
+                        self.db_manager.execute_update(
+                            upsert_query,
+                            (province_code, province_name, None, 1)
+                        )
+                        saved_count += 1
+                        
+                    except Exception as e:
+                        self.logger.error(f"시도 {province_code} 저장 실패: {e}")
+            
+            # 2. 시군구 데이터 저장
+            for province_code, district_data in districts_data.items():
+                district_codes = district_data.get("district_codes", [])
+                
+                for district in district_codes:
+                    try:
+                        district_code = district.get("code")
+                        district_name = district.get("name")
+                        
+                        if district_code and district_name:
+                            # 시군구 코드는 시도코드_시군구코드 형태로 저장
+                            full_district_code = f"{province_code}_{district_code}"
+                            
+                            # regions 테이블에 UPSERT
+                            upsert_query = """
+                                INSERT INTO regions (region_code, region_name, parent_region_code, region_level, created_at, updated_at)
+                                VALUES (%s, %s, %s, %s, NOW(), NOW())
+                                ON CONFLICT (region_code) 
+                                DO UPDATE SET 
+                                    region_name = EXCLUDED.region_name,
+                                    parent_region_code = EXCLUDED.parent_region_code,
+                                    region_level = EXCLUDED.region_level,
+                                    updated_at = NOW()
+                            """
+                            
+                            self.db_manager.execute_update(
+                                upsert_query,
+                                (full_district_code, district_name, province_code, 2)
+                            )
+                            saved_count += 1
+                            
+                    except Exception as e:
+                        self.logger.error(f"시군구 {province_code}_{district.get('code', 'N/A')} 저장 실패: {e}")
+            
+            self.logger.info(f"계층적 지역 데이터 저장 완료: 총 {saved_count}개 저장")
+            
+        except Exception as e:
+            self.logger.error(f"계층적 지역 데이터 저장 실패: {e}")
 
     async def _collect_area_data(
         self,

@@ -69,13 +69,14 @@ class ComprehensiveTourismJob(BaseJob):
             # 1. 통합 KTO 데이터 수집 (새 구조 사용 + 신규 API 포함)
             self.logger.info("1단계: 통합 KTO API를 통한 종합 데이터 수집 (신규 API 포함)")
             try:
-                # 새로운 통합 구조로 모든 데이터 수집 (4개 신규 API 포함)
+                # 새로운 통합 구조로 모든 데이터 수집 (4개 신규 API + 계층적 지역코드 포함)
                 collection_result = await self.unified_client.collect_all_data(
                     content_types=None,  # 모든 컨텐츠 타입
                     area_codes=None,  # 모든 지역
                     store_raw=True,  # 원본 데이터 저장
                     auto_transform=True,  # 자동 변환 수행
                     include_new_apis=True,  # 신규 추가된 4개 API 포함
+                    include_hierarchical_regions=True,  # 계층적 지역코드 수집 포함
                 )
 
                 self.logger.info(
@@ -91,6 +92,16 @@ class ComprehensiveTourismJob(BaseJob):
                         processed_count = api_result.get("total_processed_records", 0)
                         self.logger.info(f"  - {api_name}: 원본 {raw_count}건, 처리 {processed_count}건")
 
+                # 계층적 지역코드 수집 결과 로깅
+                hierarchical_collected = collection_result.get("hierarchical_regions_collected", {})
+                if hierarchical_collected:
+                    self.logger.info("=== 계층적 지역코드 수집 결과 ===")
+                    provinces_count = hierarchical_collected.get("total_provinces", 0)
+                    districts_count = hierarchical_collected.get("total_districts", 0)
+                    self.logger.info(f"  - 시도: {provinces_count}개")
+                    self.logger.info(f"  - 시군구: {districts_count}개")
+                    self.logger.info(f"  - 총 지역코드: {provinces_count + districts_count}개")
+
                 # 수집 결과를 기존 형태로 변환 (호환성)
                 comprehensive_data = {
                     "total_raw_records": collection_result["total_raw_records"],
@@ -101,6 +112,7 @@ class ComprehensiveTourismJob(BaseJob):
                         "content_types_collected"
                     ],
                     "new_apis_collected": collection_result.get("new_apis_collected", {}),
+                    "hierarchical_regions_collected": collection_result.get("hierarchical_regions_collected", {}),
                     "sync_batch_id": collection_result["sync_batch_id"],
                 }
 
