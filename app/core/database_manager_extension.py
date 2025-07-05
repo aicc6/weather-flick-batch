@@ -357,6 +357,137 @@ class DatabaseManagerExtension:
             self.logger.error(f"축제/행사 데이터 UPSERT 실패: {e}")
             return False
 
+    def upsert_pet_tour_info(self, data: Dict) -> bool:
+        """반려동물 동반여행 정보 UPSERT"""
+
+        query = """
+        INSERT INTO pet_tour_info (
+            content_id, content_type_id, title, address, latitude, longitude,
+            area_code, sigungu_code, tel, homepage, overview,
+            cat1, cat2, cat3, first_image, first_image2,
+            pet_acpt_abl, pet_info, raw_data_id, data_quality_score,
+            processing_status, last_sync_at
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+        )
+        ON CONFLICT (content_id) DO UPDATE SET
+            content_type_id = EXCLUDED.content_type_id,
+            title = EXCLUDED.title,
+            address = EXCLUDED.address,
+            latitude = EXCLUDED.latitude,
+            longitude = EXCLUDED.longitude,
+            area_code = EXCLUDED.area_code,
+            sigungu_code = EXCLUDED.sigungu_code,
+            tel = EXCLUDED.tel,
+            homepage = EXCLUDED.homepage,
+            overview = EXCLUDED.overview,
+            cat1 = EXCLUDED.cat1,
+            cat2 = EXCLUDED.cat2,
+            cat3 = EXCLUDED.cat3,
+            first_image = EXCLUDED.first_image,
+            first_image2 = EXCLUDED.first_image2,
+            pet_acpt_abl = EXCLUDED.pet_acpt_abl,
+            pet_info = EXCLUDED.pet_info,
+            raw_data_id = EXCLUDED.raw_data_id,
+            data_quality_score = EXCLUDED.data_quality_score,
+            processing_status = EXCLUDED.processing_status,
+            last_sync_at = EXCLUDED.last_sync_at,
+            updated_at = CURRENT_TIMESTAMP
+        """
+
+        params = (
+            data.get("content_id"),
+            data.get("content_type_id"),
+            data.get("title"),
+            data.get("address"),
+            data.get("latitude"),
+            data.get("longitude"),
+            data.get("area_code"),
+            data.get("sigungu_code"),
+            data.get("tel"),
+            data.get("homepage"),
+            data.get("overview"),
+            data.get("cat1"),
+            data.get("cat2"),
+            data.get("cat3"),
+            data.get("first_image"),
+            data.get("first_image2"),
+            data.get("pet_acpt_abl"),
+            data.get("pet_info"),
+            data.get("raw_data_id"),
+            data.get("data_quality_score"),
+            data.get("processing_status"),
+            data.get("last_sync_at"),
+        )
+
+        try:
+            self.db_manager.execute_update(query, params)
+            return True
+        except Exception as e:
+            self.logger.error(f"반려동물 동반여행 정보 UPSERT 실패: {e}")
+            return False
+
+    def upsert_restaurant(self, data: Dict) -> bool:
+        """음식점 데이터 UPSERT"""
+
+        query = """
+        INSERT INTO restaurants (
+            content_id, region_code, restaurant_name, address, detail_address,
+            latitude, longitude, first_image, first_image_small, tel,
+            category_code, sub_category_code, sigungu_code,
+            overview, homepage, raw_data_id, last_sync_at, data_quality_score
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+        )
+        ON CONFLICT (content_id) DO UPDATE SET
+            region_code = EXCLUDED.region_code,
+            restaurant_name = EXCLUDED.restaurant_name,
+            address = EXCLUDED.address,
+            detail_address = EXCLUDED.detail_address,
+            latitude = EXCLUDED.latitude,
+            longitude = EXCLUDED.longitude,
+            first_image = EXCLUDED.first_image,
+            first_image_small = EXCLUDED.first_image_small,
+            tel = EXCLUDED.tel,
+            category_code = EXCLUDED.category_code,
+            sub_category_code = EXCLUDED.sub_category_code,
+            sigungu_code = EXCLUDED.sigungu_code,
+            overview = EXCLUDED.overview,
+            homepage = EXCLUDED.homepage,
+            raw_data_id = EXCLUDED.raw_data_id,
+            last_sync_at = EXCLUDED.last_sync_at,
+            data_quality_score = EXCLUDED.data_quality_score,
+            updated_at = CURRENT_TIMESTAMP
+        """
+
+        params = (
+            data.get("content_id"),
+            data.get("region_code"),
+            data.get("restaurant_name"),
+            data.get("address"),
+            data.get("address_detail"),  # 변환된 데이터에서 온 필드명
+            data.get("latitude"),
+            data.get("longitude"),
+            data.get("image_url"),      # 변환된 데이터에서 온 필드명
+            data.get("thumbnail_url"),  # 변환된 데이터에서 온 필드명
+            data.get("phone_number"),   # 변환된 데이터에서 온 필드명
+            data.get("category_large_code"),   # 변환된 데이터에서 온 필드명
+            data.get("category_medium_code"),  # 변환된 데이터에서 온 필드명
+            data.get("sigungu_code"),
+            data.get("description"),    # 변환된 데이터에서 온 필드명
+            data.get("homepage_url"),   # 변환된 데이터에서 온 필드명
+            data.get("raw_data_id"),
+            data.get("last_sync_at"),
+            data.get("data_quality_score"),
+        )
+
+        try:
+            self.db_manager.execute_update(query, params)
+            return True
+        except Exception as e:
+            self.logger.error(f"음식점 데이터 UPSERT 실패: {e}")
+            return False
+
     def get_api_call_statistics(self, api_provider: str) -> Dict:
         """API 호출 통계 조회"""
 
@@ -432,6 +563,8 @@ def extend_database_manager(db_manager: SyncDatabaseManager) -> SyncDatabaseMana
     db_manager.upsert_tourist_attraction = extension.upsert_tourist_attraction
     db_manager.upsert_accommodation = extension.upsert_accommodation
     db_manager.upsert_festival_event = extension.upsert_festival_event
+    db_manager.upsert_pet_tour_info = extension.upsert_pet_tour_info
+    db_manager.upsert_restaurant = extension.upsert_restaurant
     db_manager.get_api_call_statistics = extension.get_api_call_statistics
     db_manager.get_data_quality_thresholds = extension.get_data_quality_thresholds
 

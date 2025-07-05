@@ -391,9 +391,12 @@ class UnifiedKTOClient:
                                 
                                 collection_results["total_raw_records"] += len(item_list)
                                 
-                                if auto_transform:
-                                    # 간단한 데이터 처리 (실제 transform 생략)
-                                    collection_results["total_processed_records"] += len(item_list)
+                                if auto_transform and response.raw_data_id:
+                                    # 실제 데이터 변환 및 저장
+                                    processed_count = await self._transform_and_save_pet_tour_data(
+                                        response.raw_data_id, item_list
+                                    )
+                                    collection_results["total_processed_records"] += processed_count
                         
                         await asyncio.sleep(0.3)
                 else:
@@ -414,9 +417,12 @@ class UnifiedKTOClient:
                             
                             collection_results["total_raw_records"] = len(item_list)
                             
-                            if auto_transform:
-                                # 간단한 데이터 처리 (실제 transform 생략)
-                                collection_results["total_processed_records"] = len(item_list)
+                            if auto_transform and response.raw_data_id:
+                                # 실제 데이터 변환 및 저장
+                                processed_count = await self._transform_and_save_pet_tour_data(
+                                    response.raw_data_id, item_list
+                                )
+                                collection_results["total_processed_records"] = processed_count
                 
             except Exception as e:
                 error_msg = f"펫투어 수집 실패: {e}"
@@ -430,6 +436,39 @@ class UnifiedKTOClient:
         )
         
         return collection_results
+
+    async def _transform_and_save_pet_tour_data(self, raw_data_id: str, item_list: List[Dict]) -> int:
+        """반려동물 동반여행 데이터 변환 및 저장"""
+        try:
+            # 데이터 변환
+            transformation_result = await self.transformation_pipeline.transform_raw_data(raw_data_id)
+            
+            if not transformation_result.success or not transformation_result.processed_data:
+                self.logger.warning(f"반려동물 동반여행 데이터 변환 실패: {raw_data_id}")
+                return 0
+            
+            # 데이터베이스 저장
+            saved_count = 0
+            for processed_item in transformation_result.processed_data:
+                # 필수 메타데이터 추가
+                processed_item["raw_data_id"] = raw_data_id
+                processed_item["data_quality_score"] = transformation_result.quality_score or 0.0
+                processed_item["processing_status"] = "processed"
+                processed_item["last_sync_at"] = datetime.utcnow()
+                
+                # pet_tour_info 테이블에 저장
+                if self.db_manager.upsert_pet_tour_info(processed_item):
+                    saved_count += 1
+                    self.logger.debug(f"반려동물 동반여행 정보 저장 성공: {processed_item.get('title')}")
+                else:
+                    self.logger.warning(f"반려동물 동반여행 정보 저장 실패: {processed_item.get('title')}")
+            
+            self.logger.info(f"반려동물 동반여행 데이터 처리 완료: {saved_count}/{len(transformation_result.processed_data)}건 저장")
+            return saved_count
+            
+        except Exception as e:
+            self.logger.error(f"반려동물 동반여행 데이터 변환/저장 실패: {e}")
+            return 0
 
     async def collect_classification_system_codes(
         self, 
@@ -917,7 +956,7 @@ class UnifiedKTOClient:
                     break
 
                 # 응답 데이터 확인
-                response_body = response.data.get("response", {}).get("body", {})
+                response_body = response.data  # UnifiedAPIClient가 이미 body만 반환
                 total_count = response_body.get("totalCount", 0)
                 items = response_body.get("items", {})
 
@@ -1235,7 +1274,7 @@ class UnifiedKTOClient:
             saved_count = 0
             for data in processed_data:
                 # 펫투어 전용 테이블에 저장
-                await self.db_manager.execute_query(
+                self.db_manager.execute_update(
                     """
                     INSERT INTO pet_tour_info (
                         content_id, title, address, area_code, content_type_id,
@@ -1289,7 +1328,7 @@ class UnifiedKTOClient:
             saved_count = 0
             for data in processed_data:
                 # 분류체계 코드 테이블에 저장
-                await self.db_manager.execute_query(
+                self.db_manager.execute_update(
                     """
                     INSERT INTO classification_system_codes (
                         code, name, description, parent_code, level,
@@ -1340,7 +1379,7 @@ class UnifiedKTOClient:
             saved_count = 0
             for data in processed_data:
                 # 동기화 목록 테이블에 저장
-                await self.db_manager.execute_query(
+                self.db_manager.execute_update(
                     """
                     INSERT INTO area_based_sync_list (
                         content_id, title, content_type_id, area_code, 
@@ -1391,7 +1430,7 @@ class UnifiedKTOClient:
             saved_count = 0
             for data in processed_data:
                 # 법정동 코드 테이블에 저장
-                await self.db_manager.execute_query(
+                self.db_manager.execute_update(
                     """
                     INSERT INTO legal_dong_codes (
                         area_code, sigungu_code, umd_code, ri_code,
@@ -1456,12 +1495,16 @@ class UnifiedKTOClient:
 
                 # 테이블별 저장 로직
                 if target_table == "tourist_attractions":
-                    await self.db_manager.upsert_tourist_attraction(item)
+                    self.db_manager.upsert_tourist_attraction(item)
                 elif target_table == "accommodations":
-                    await self.db_manager.upsert_accommodation(item)
+                    self.db_manager.upsert_accommodation(item)
                 elif target_table == "festivals_events":
-                    await self.db_manager.upsert_festival_event(item)
-                # 다른 테이블들도 필요시 추가
+                    self.db_manager.upsert_festival_event(item)
+                elif target_table == "restaurants":
+                    self.db_manager.upsert_restaurant(item)
+                else:
+                    self.logger.warning(f"지원하지 않는 테이블: {target_table}, 관광지로 저장")
+                    self.db_manager.upsert_tourist_attraction(item)
 
                 saved_count += 1
 
@@ -1607,7 +1650,7 @@ class UnifiedKTOClient:
         """API 호출 통계 조회"""
 
         try:
-            stats = await self.db_manager.get_api_call_statistics("KTO")
+            stats = self.db_manager.get_api_call_statistics("KTO")
             return {
                 "provider": "KTO",
                 "today_calls": stats.get("today_calls", 0),

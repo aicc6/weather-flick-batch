@@ -133,51 +133,81 @@ class MultiAPIKeyManager:
         return keys
 
     def get_active_key(self, provider: APIProvider) -> Optional[APIKeyInfo]:
-        """사용 가능한 API 키 반환"""
+        """사용 가능한 API 키 반환 (상세 로깅 포함)"""
         if provider not in self.api_keys or not self.api_keys[provider]:
             self.logger.error(f"❌ {provider.value} API 키가 설정되지 않았습니다.")
             return None
 
         keys = self.api_keys[provider]
         start_index = self.current_key_index[provider]
+        
+        # 키 상태 요약 로깅
+        active_count = len([k for k in keys if k.is_active])
+        total_count = len(keys)
+        self.logger.debug(
+            f"🗝️ {provider.value} 키 상태 확인: {active_count}/{total_count}개 활성"
+        )
 
         # 모든 키를 순환하면서 사용 가능한 키 찾기
         for i in range(len(keys)):
             current_index = (start_index + i) % len(keys)
             key_info = keys[current_index]
+            key_preview = key_info.key[:10] + "..."
+            
+            # 키별 상태 확인 로깅
+            availability_reason = self._get_key_unavailable_reason(key_info)
+            if availability_reason:
+                self.logger.debug(
+                    f"⏭️ {provider.value} 키 #{current_index} 건너뜀: {key_preview} - {availability_reason}"
+                )
+                continue
 
-            if self._is_key_available(key_info):
-                self.current_key_index[provider] = current_index
-                return key_info
+            # 사용 가능한 키 발견
+            self.current_key_index[provider] = current_index
+            self.logger.info(
+                f"✅ {provider.value} 키 #{current_index} 선택: {key_preview} "
+                f"(사용량: {key_info.current_usage}/{key_info.daily_limit}, "
+                f"오류: {key_info.error_count}회)"
+            )
+            return key_info
 
-        # 모든 키가 한도 초과인 경우
-        self.logger.warning(f"⚠️ 모든 {provider.value} API 키가 한도에 도달했습니다.")
+        # 모든 키가 사용 불가능한 경우
+        self._log_all_keys_status(provider)
+        self.logger.warning(f"⚠️ 모든 {provider.value} API 키가 사용 불가능합니다.")
         return self._get_least_used_key(provider)
 
     def _is_key_available(self, key_info: APIKeyInfo) -> bool:
         """키가 사용 가능한지 확인"""
+        return self._get_key_unavailable_reason(key_info) is None
+    
+    def _get_key_unavailable_reason(self, key_info: APIKeyInfo) -> Optional[str]:
+        """키가 사용 불가능한 이유 반환 (None이면 사용 가능)"""
         if not key_info.is_active:
-            return False
+            return f"비활성화됨 (오류 {key_info.error_count}회)"
 
         # 일일 한도 확인
         if key_info.current_usage >= key_info.daily_limit:
-            return False
+            return f"일일 한도 초과 ({key_info.current_usage}/{key_info.daily_limit})"
 
         # Rate limit 시간 확인
         if (
             key_info.rate_limit_reset_time
             and datetime.now() < key_info.rate_limit_reset_time
         ):
-            return False
+            remaining_time = key_info.rate_limit_reset_time - datetime.now()
+            minutes = int(remaining_time.total_seconds() // 60)
+            return f"Rate limit 제한 중 ({minutes}분 후 해제)"
 
         # 최근 오류 확인 (오류 발생 후 일정 시간 대기)
         if (
             key_info.last_error_time
             and datetime.now() - key_info.last_error_time < timedelta(minutes=10)
         ):
-            return False
+            elapsed_time = datetime.now() - key_info.last_error_time
+            remaining_minutes = 10 - int(elapsed_time.total_seconds() // 60)
+            return f"최근 오류로 대기 중 ({remaining_minutes}분 후 재시도)"
 
-        return True
+        return None
 
     def _get_least_used_key(self, provider: APIProvider) -> Optional[APIKeyInfo]:
         """가장 적게 사용된 키 반환"""
@@ -199,15 +229,21 @@ class MultiAPIKeyManager:
         key: str,
         success: bool = True,
         is_rate_limited: bool = False,
+        error_details: str = None,
     ):
-        """API 호출 기록"""
+        """API 호출 기록 (상세 오류 정보 포함)"""
         key_info = self._find_key_info(provider, key)
         if not key_info:
+            self.logger.warning(f"🔍 알 수 없는 API 키: {provider.value} - {key[:10]}...")
             return
 
         key_info.current_usage += 1
         key_info.last_used = datetime.now()
 
+        # 키별 로깅
+        key_preview = key[:10] + "..."
+        key_index = self._get_key_index(provider, key)
+        
         # 통계 업데이트
         if key not in self.stats:
             self.stats[key] = APIKeyStats()
@@ -217,22 +253,43 @@ class MultiAPIKeyManager:
 
         if success:
             stats.successful_requests += 1
+            self.logger.debug(
+                f"✅ {provider.value} API 키 #{key_index} 호출 성공: {key_preview} "
+                f"(사용량: {key_info.current_usage}/{key_info.daily_limit})"
+            )
         else:
             stats.failed_requests += 1
             key_info.error_count += 1
             key_info.last_error_time = datetime.now()
+            
+            # 상세 오류 로깅
+            error_msg = f"❌ {provider.value} API 키 #{key_index} 호출 실패: {key_preview}"
+            if error_details:
+                error_msg += f" - 오류: {error_details}"
+            error_msg += f" (연속 오류: {key_info.error_count}회)"
+            self.logger.warning(error_msg)
 
         if is_rate_limited:
             stats.rate_limit_errors += 1
             # Rate limit 발생 시 1시간 후 재시도
             key_info.rate_limit_reset_time = datetime.now() + timedelta(hours=1)
-            self.logger.warning(f"⚠️ {provider.value} API 키 한도 초과: {key[:10]}...")
+            self.logger.warning(
+                f"🚫 {provider.value} API 키 #{key_index} 한도 초과: {key_preview} "
+                f"(재시도 가능: {key_info.rate_limit_reset_time.strftime('%H:%M:%S')})"
+            )
 
         # 오류가 많이 발생한 키는 일시 비활성화
         if key_info.error_count >= 5:
             key_info.is_active = False
+            self.logger.error(
+                f"🚨 {provider.value} API 키 #{key_index} 자동 비활성화: {key_preview} "
+                f"(누적 오류: {key_info.error_count}회)"
+            )
+            
+            # 활성 키 개수 확인 및 경고
+            active_keys = [k for k in self.api_keys[provider] if k.is_active]
             self.logger.warning(
-                f"⚠️ {provider.value} API 키 비활성화 (오류 {key_info.error_count}회): {key[:10]}..."
+                f"⚠️ {provider.value} 활성 키 개수: {len(active_keys)}/{len(self.api_keys[provider])}개"
             )
 
         # 캐시 저장
@@ -385,6 +442,122 @@ class MultiAPIKeyManager:
             stats["active_keys"] += provider_stats["active_keys"]
 
         return stats
+    
+    def _get_key_index(self, provider: APIProvider, key: str) -> int:
+        """키의 인덱스 번호 반환"""
+        if provider not in self.api_keys:
+            return -1
+        
+        for i, key_info in enumerate(self.api_keys[provider]):
+            if key_info.key == key:
+                return i
+        return -1
+    
+    def _log_all_keys_status(self, provider: APIProvider):
+        """모든 키의 상태를 상세 로깅"""
+        if provider not in self.api_keys:
+            return
+        
+        self.logger.warning(f"🔍 {provider.value} API 키 상태 상세 조회:")
+        
+        for i, key_info in enumerate(self.api_keys[provider]):
+            key_preview = key_info.key[:10] + "..."
+            status = "활성" if key_info.is_active else "비활성"
+            reason = self._get_key_unavailable_reason(key_info) or "사용 가능"
+            
+            usage_percent = (
+                (key_info.current_usage / key_info.daily_limit * 100)
+                if key_info.daily_limit > 0 else 0
+            )
+            
+            self.logger.warning(
+                f"  키 #{i}: {key_preview} | {status} | {reason} | "
+                f"사용량: {key_info.current_usage}/{key_info.daily_limit} ({usage_percent:.1f}%) | "
+                f"오류: {key_info.error_count}회"
+            )
+    
+    def get_detailed_key_status(self, provider: APIProvider) -> Dict:
+        """키별 상세 상태 정보 반환"""
+        if provider not in self.api_keys:
+            return {"error": f"{provider.value} 키가 설정되지 않음"}
+        
+        keys_status = []
+        
+        for i, key_info in enumerate(self.api_keys[provider]):
+            key_preview = key_info.key[:10] + "..."
+            unavailable_reason = self._get_key_unavailable_reason(key_info)
+            
+            key_status = {
+                "index": i,
+                "key_preview": key_preview,
+                "is_active": key_info.is_active,
+                "is_available": unavailable_reason is None,
+                "unavailable_reason": unavailable_reason,
+                "current_usage": key_info.current_usage,
+                "daily_limit": key_info.daily_limit,
+                "usage_percent": (
+                    (key_info.current_usage / key_info.daily_limit * 100)
+                    if key_info.daily_limit > 0 else 0
+                ),
+                "error_count": key_info.error_count,
+                "last_used": key_info.last_used.isoformat() if key_info.last_used else None,
+                "last_error_time": key_info.last_error_time.isoformat() if key_info.last_error_time else None,
+                "rate_limit_reset_time": key_info.rate_limit_reset_time.isoformat() if key_info.rate_limit_reset_time else None,
+            }
+            keys_status.append(key_status)
+        
+        active_keys = len([k for k in self.api_keys[provider] if k.is_active])
+        available_keys = len([k for k in self.api_keys[provider] if self._get_key_unavailable_reason(k) is None])
+        
+        return {
+            "provider": provider.value,
+            "total_keys": len(self.api_keys[provider]),
+            "active_keys": active_keys,
+            "available_keys": available_keys,
+            "current_key_index": self.current_key_index.get(provider, 0),
+            "keys": keys_status
+        }
+    
+    def force_deactivate_key(self, provider: APIProvider, key_preview: str, reason: str = "수동 비활성화"):
+        """특정 키 강제 비활성화"""
+        if provider not in self.api_keys:
+            return False
+        
+        for key_info in self.api_keys[provider]:
+            if key_info.key.startswith(key_preview.replace("...", "")):
+                key_info.is_active = False
+                key_info.error_count += 10  # 높은 오류 수로 설정
+                key_info.last_error_time = datetime.now()
+                
+                self.logger.warning(
+                    f"🚨 {provider.value} API 키 강제 비활성화: {key_preview} - {reason}"
+                )
+                
+                self._save_cache()
+                return True
+        
+        return False
+    
+    def reactivate_key(self, provider: APIProvider, key_preview: str):
+        """특정 키 재활성화 (오류 카운트 리셋)"""
+        if provider not in self.api_keys:
+            return False
+        
+        for key_info in self.api_keys[provider]:
+            if key_info.key.startswith(key_preview.replace("...", "")):
+                key_info.is_active = True
+                key_info.error_count = 0
+                key_info.last_error_time = None
+                key_info.rate_limit_reset_time = None
+                
+                self.logger.info(
+                    f"✅ {provider.value} API 키 재활성화: {key_preview}"
+                )
+                
+                self._save_cache()
+                return True
+        
+        return False
 
     def _load_cache(self):
         """캐시에서 사용량 정보 로드"""

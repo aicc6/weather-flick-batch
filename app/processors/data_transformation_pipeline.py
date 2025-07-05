@@ -78,9 +78,19 @@ class BaseDataTransformer(ABC):
     def _extract_items(self, raw_response: Dict) -> List[Dict]:
         """API 응답에서 아이템 목록 추출 (KTO/KMA 공통)"""
         try:
-            items = raw_response.get("response", {}).get("body", {}).get("items", {})
-
+            # UnifiedAPIClient가 이미 body 부분만 반환하므로 직접 items에 접근
+            # 기존 전체 응답 구조도 지원하기 위해 두 가지 경로 시도
+            items = None
+            
+            # 1. UnifiedAPIClient에서 반환한 body 데이터인 경우
+            if "items" in raw_response:
+                items = raw_response.get("items", {})
+            # 2. 전체 응답 구조인 경우 (하위 호환성)
+            elif "response" in raw_response:
+                items = raw_response.get("response", {}).get("body", {}).get("items", {})
+            
             if not items:
+                self.logger.debug(f"items가 없습니다. raw_response 키: {list(raw_response.keys())}")
                 return []
 
             item_list = items.get("item", [])
@@ -91,6 +101,7 @@ class BaseDataTransformer(ABC):
             elif isinstance(item_list, list):
                 return item_list
             else:
+                self.logger.debug(f"item이 없거나 잘못된 타입입니다. items 키: {list(items.keys()) if isinstance(items, dict) else type(items)}")
                 return []
 
         except Exception as e:
@@ -159,6 +170,32 @@ class KTODataTransformer(BaseDataTransformer):
             "tel": "phone_number",
             "modifiedtime": "api_modified_time",
         },
+        "restaurants": {
+            "contentid": "content_id",
+            "title": "restaurant_name",
+            "addr1": "address",
+            "addr2": "address_detail",
+            "mapx": "longitude",
+            "mapy": "latitude",
+            "firstimage": "image_url",
+            "firstimage2": "thumbnail_url",
+            "areacode": "region_code",
+            "sigungucode": "sigungu_code",
+            "cat1": "category_large_code",
+            "cat2": "category_medium_code",
+            "cat3": "category_small_code",
+            "modifiedtime": "api_modified_time",
+            "tel": "phone_number",
+            "overview": "description",
+            "homepage": "homepage_url",
+        },
+        "pet_tour_info": {
+            "contentid": "content_id",
+            "acmpyTypeCd": "pet_acpt_abl",  # 동반 가능 유형
+            "acmpyNeedMtr": "title",        # 임시로 title에 필요사항 저장
+            "etcAcmpyInfo": "pet_info",     # 기타 동반 정보
+            "acmpyPsblCpam": "overview",    # 임시로 overview에 동반 가능 동물 저장
+        },
     }
 
     def get_rule_name(self) -> str:
@@ -167,18 +204,38 @@ class KTODataTransformer(BaseDataTransformer):
     def get_target_table(self, endpoint: str) -> str:
         """엔드포인트별 대상 테이블 결정"""
         endpoint_mapping = {
-            "areaBasedList2": "tourist_attractions",
+            "areaBasedList2": "tourist_attractions",  # 기본값, contentTypeId로 세분화됨
             "searchStay2": "accommodations",
             "searchFestival2": "festivals_events",
             "locationBasedList2": "tourist_attractions",
             "searchKeyword2": "tourist_attractions",
+            "detailPetTour2": "pet_tour_info",  # 반려동물 동반여행 정보
         }
 
+        # areaBasedList2의 경우 contentTypeId에 따라 결정
+        if "areaBasedList2" in endpoint:
+            return "dynamic"  # 나중에 contentTypeId로 결정
+        
         for key, table in endpoint_mapping.items():
             if key in endpoint:
                 return table
 
         return "tourist_attractions"  # 기본값
+    
+    def get_target_table_by_content_type(self, content_type_id: str) -> str:
+        """contentTypeId에 따른 대상 테이블 결정"""
+        content_type_mapping = {
+            "12": "tourist_attractions",  # 관광지
+            "14": "tourist_attractions",  # 문화시설 -> 관광지로 통합
+            "15": "festivals_events",     # 축제공연행사
+            "25": "tourist_attractions",  # 여행코스 -> 관광지로 통합
+            "28": "tourist_attractions",  # 레포츠 -> 관광지로 통합
+            "32": "accommodations",       # 숙박
+            "38": "tourist_attractions",  # 쇼핑 -> 관광지로 통합
+            "39": "restaurants",          # 음식점
+        }
+        
+        return content_type_mapping.get(content_type_id, "tourist_attractions")
 
     def transform(self, endpoint: str, raw_response: Dict) -> List[Dict]:
         """KTO API 응답을 표준 형식으로 변환"""
@@ -191,6 +248,15 @@ class KTODataTransformer(BaseDataTransformer):
 
         # 2. 대상 테이블 결정
         target_table = self.get_target_table(endpoint)
+        
+        # areaBasedList2의 경우 첫 번째 아이템의 contentTypeId로 테이블 결정
+        if target_table == "dynamic" and items:
+            content_type_id = items[0].get("contenttypeid")
+            if content_type_id:
+                target_table = self.get_target_table_by_content_type(str(content_type_id))
+                self.logger.debug(f"contentTypeId {content_type_id}로 테이블 결정: {target_table}")
+            else:
+                target_table = "tourist_attractions"  # 기본값
 
         # 3. 테이블별 변환 로직 적용
         if target_table == "tourist_attractions":
@@ -199,6 +265,10 @@ class KTODataTransformer(BaseDataTransformer):
             return self._transform_accommodations(items)
         elif target_table == "festivals_events":
             return self._transform_festivals_events(items)
+        elif target_table == "restaurants":
+            return self._transform_restaurants(items)
+        elif target_table == "pet_tour_info":
+            return self._transform_pet_tour_info(items)
         else:
             raise ValueError(f"지원하지 않는 테이블: {target_table}")
 
@@ -253,6 +323,54 @@ class KTODataTransformer(BaseDataTransformer):
             transformed = self._process_event_dates(transformed)
 
             transformed.update(self._add_metadata("KTO_API"))
+            transformed_items.append(transformed)
+
+        return transformed_items
+
+    def _transform_restaurants(self, items: List[Dict]) -> List[Dict]:
+        """음식점 데이터 변환"""
+        transformed_items = []
+        mapping = self.FIELD_MAPPING["restaurants"]
+
+        for item in items:
+            transformed = self._apply_field_mapping(item, mapping)
+
+            # 좌표 데이터 검증 및 변환
+            transformed = self._process_coordinates(transformed)
+
+            # 카테고리 정보 통합
+            transformed["category_info"] = {
+                "large_code": transformed.get("category_large_code"),
+                "medium_code": transformed.get("category_medium_code"),
+                "small_code": transformed.get("category_small_code"),
+            }
+
+            # 메타데이터 추가
+            transformed.update(self._add_metadata("KTO_API"))
+
+            transformed_items.append(transformed)
+
+        return transformed_items
+
+    def _transform_pet_tour_info(self, items: List[Dict]) -> List[Dict]:
+        """반려동물 동반여행 정보 변환"""
+        transformed_items = []
+        mapping = self.FIELD_MAPPING["pet_tour_info"]
+
+        for item in items:
+            transformed = self._apply_field_mapping(item, mapping)
+
+            # 좌표 데이터 검증 및 변환
+            transformed = self._process_coordinates(transformed)
+
+            # 반려동물 관련 정보 처리
+            if transformed.get("pet_acpt_abl"):
+                # Y/N 값을 boolean으로 변환하지 않고 문자열 그대로 유지
+                transformed["pet_acpt_abl"] = str(transformed["pet_acpt_abl"]).strip()
+
+            # 메타데이터 추가
+            transformed.update(self._add_metadata("KTO_API"))
+
             transformed_items.append(transformed)
 
         return transformed_items

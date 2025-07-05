@@ -279,7 +279,9 @@ class UnifiedAPIClient:
         if api_provider in [APIProvider.KTO, APIProvider.KMA]:
             api_key_info = self.key_manager.get_active_key(api_provider)
             if not api_key_info:
-                raise ValueError(f"{api_provider.value} API 키가 설정되지 않았습니다.")
+                error_msg = f"{api_provider.value} API 키가 설정되지 않았습니다."
+                self.logger.error(error_msg)
+                raise ValueError(error_msg)
 
             api_key = api_key_info.key
             params = params.copy()
@@ -444,6 +446,18 @@ class UnifiedAPIClient:
             response_data = await self._execute_api_call(api_provider, endpoint, params)
             duration_ms = int((time.time() - start_time) * 1000)
 
+            # API 키 매니저에 성공 기록
+            if api_provider in [APIProvider.KTO, APIProvider.KMA]:
+                api_key_info = self.key_manager.get_active_key(api_provider)
+                if api_key_info:
+                    self.key_manager.record_api_call(
+                        provider=api_provider,
+                        key=api_key_info.key,
+                        success=True,
+                        is_rate_limited=False,
+                        error_details=None
+                    )
+
             # 3. 원본 데이터 저장
             raw_data_id = None
             if store_raw:
@@ -484,15 +498,36 @@ class UnifiedAPIClient:
 
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
+            error_details = str(e)
+            
             self.logger.error(
-                f"API 호출 실패: {api_provider.value}/{endpoint} - {e} ({duration_ms}ms)"
+                f"API 호출 실패: {api_provider.value}/{endpoint} - {error_details} ({duration_ms}ms)"
             )
+
+            # API 키 매니저에 오류 정보 기록
+            if api_provider in [APIProvider.KTO, APIProvider.KMA]:
+                api_key_info = self.key_manager.get_active_key(api_provider)
+                if api_key_info:
+                    # Rate limit 오류 확인
+                    is_rate_limited = any(keyword in error_details.lower() for keyword in [
+                        "rate limit", "quota", "한도", "초과", "제한", "429"
+                    ])
+                    
+                    self.key_manager.record_api_call(
+                        provider=api_provider,
+                        key=api_key_info.key,
+                        success=False,
+                        is_rate_limited=is_rate_limited,
+                        error_details=error_details
+                    )
 
             # 오류도 원본 데이터로 저장 (선택적)
             if store_raw:
                 error_response = {
-                    "error": str(e),
+                    "error": error_details,
                     "timestamp": datetime.utcnow().isoformat(),
+                    "endpoint": endpoint,
+                    "params": params
                 }
 
                 try:
@@ -516,7 +551,7 @@ class UnifiedAPIClient:
                 except:
                     pass  # 오류 저장 실패는 무시
 
-            return APIResponse.error_response(str(e))
+            return APIResponse.error_response(error_details)
 
     async def get_raw_data(self, raw_data_id: str) -> Optional[Dict]:
         """저장된 원본 데이터 조회"""
