@@ -893,6 +893,48 @@ class DataTransformationPipeline:
         # 검증기 등록
         self.validators = DataValidatorRegistry()
 
+    def _extract_items(self, raw_response: Dict) -> List[Dict]:
+        """API 응답에서 아이템 목록 추출 (KTO/KMA 공통)"""
+        try:
+            # UnifiedAPIClient가 이미 body 부분만 반환하므로 직접 items에 접근
+            # 기존 전체 응답 구조도 지원하기 위해 두 가지 경로 시도
+            items = None
+            
+            # 1. UnifiedAPIClient에서 반환한 body 데이터인 경우
+            if "items" in raw_response:
+                items = raw_response.get("items", {})
+            # 2. 전체 응답 구조인 경우 (하위 호환성)
+            elif "response" in raw_response:
+                items = raw_response.get("response", {}).get("body", {}).get("items", {})
+            
+            if not items:
+                self.logger.debug(f"items가 없습니다. raw_response 키: {list(raw_response.keys())}")
+                return []
+
+            item_list = items.get("item", [])
+
+            # 단일 아이템인 경우 리스트로 변환
+            if isinstance(item_list, dict):
+                return [item_list]
+            elif isinstance(item_list, list):
+                return item_list
+            else:
+                self.logger.debug(f"item이 없거나 잘못된 타입입니다. items 키: {list(items.keys()) if isinstance(items, dict) else type(items)}")
+                return []
+
+        except Exception as e:
+            self.logger.error(f"아이템 추출 실패: {e}")
+            return []
+
+    def _clean_value(self, value):
+        """값 정리 (빈 문자열을 None으로 변환)"""
+        if value is None:
+            return None
+        if isinstance(value, str):
+            cleaned = value.strip()
+            return cleaned if cleaned else None
+        return value
+
     async def transform_raw_data(self, raw_data_id: str) -> TransformationResult:
         """원본 데이터를 가공 데이터로 변환"""
 
@@ -1037,6 +1079,281 @@ class DataTransformationPipeline:
             self.logger.error(f"데이터 변환 실패 (테스트): {e}")
 
             return TransformationResult.error_result(str(e))
+
+    async def process_detailed_api_response(
+        self, 
+        api_name: str, 
+        content_id: str, 
+        content_type_id: str, 
+        raw_response: Dict,
+        raw_data_id: Optional[str] = None
+    ) -> Dict:
+        """상세 정보 API 응답 처리 및 데이터베이스 저장"""
+        
+        try:
+            if api_name == "detailCommon2":
+                return await self._process_detail_common(content_id, content_type_id, raw_response, raw_data_id)
+            elif api_name == "detailIntro2":
+                return await self._process_detail_intro(content_id, content_type_id, raw_response, raw_data_id)
+            elif api_name == "detailInfo2":
+                return await self._process_detail_info(content_id, content_type_id, raw_response, raw_data_id)
+            elif api_name == "detailImage2":
+                return await self._process_detail_images(content_id, content_type_id, raw_response, raw_data_id)
+            else:
+                return {
+                    'success': False,
+                    'error': f'지원하지 않는 API: {api_name}'
+                }
+                
+        except Exception as e:
+            self.logger.error(f"{api_name} 응답 처리 실패 ({content_id}): {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    async def _process_detail_common(self, content_id: str, content_type_id: str, raw_response: Dict, raw_data_id: Optional[str]) -> Dict:
+        """detailCommon2 API 응답 처리"""
+        
+        items = self._extract_items(raw_response)
+        if not items:
+            return {'success': False, 'error': 'detailCommon2 응답에 데이터가 없습니다'}
+        
+        item = items[0]  # detailCommon2는 단일 아이템 반환
+        
+        # 기존 테이블 업데이트를 위한 필드 추출
+        update_fields = {
+            'homepage': self._clean_value(item.get('homepage')),
+            'booktour': self._clean_value(item.get('booktour')),
+            'createdtime': self._clean_value(item.get('createdtime')),
+            'modifiedtime': self._clean_value(item.get('modifiedtime')),
+            'telname': self._clean_value(item.get('tel')),  # 전화번호 정보
+            'faxno': self._clean_value(item.get('fax')),
+            'zipcode': self._clean_value(item.get('zipcode')),
+            'mlevel': int(item.get('mlevel', 0)) if item.get('mlevel') else None
+        }
+        
+        # 컨텐츠 타입별 테이블 업데이트
+        content_type_table_map = {
+            '12': 'tourist_attractions',
+            '14': 'cultural_facilities', 
+            '15': 'festivals_events',
+            '25': 'travel_courses',
+            '28': 'leisure_sports',
+            '32': 'accommodations',
+            '38': 'shopping',
+            '39': 'restaurants'
+        }
+        
+        table_name = content_type_table_map.get(content_type_id)
+        if not table_name:
+            return {'success': False, 'error': f'알 수 없는 컨텐츠 타입: {content_type_id}'}
+        
+        # 기존 레코드 업데이트
+        try:
+            update_query = f"""
+            UPDATE {table_name} 
+            SET homepage = %s, booktour = %s, createdtime = %s, modifiedtime = %s,
+                telname = %s, faxno = %s, zipcode = %s, mlevel = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE content_id = %s
+            """
+            
+            params = (
+                update_fields['homepage'],
+                update_fields['booktour'],
+                update_fields['createdtime'],
+                update_fields['modifiedtime'],
+                update_fields['telname'],
+                update_fields['faxno'],
+                update_fields['zipcode'],
+                update_fields['mlevel'],
+                content_id
+            )
+            
+            self.db_manager.execute_update(update_query, params)
+            
+            self.logger.debug(f"✅ {table_name} 테이블 detailCommon2 정보 업데이트: {content_id}")
+            
+            return {
+                'success': True,
+                'updated_table': table_name,
+                'updated_fields': list(update_fields.keys())
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ {table_name} 테이블 업데이트 실패 ({content_id}): {e}")
+            return {'success': False, 'error': str(e)}
+    
+    async def _process_detail_intro(self, content_id: str, content_type_id: str, raw_response: Dict, raw_data_id: Optional[str]) -> Dict:
+        """detailIntro2 API 응답 처리"""
+        
+        items = self._extract_items(raw_response)
+        if not items:
+            return {'success': False, 'error': 'detailIntro2 응답에 데이터가 없습니다'}
+        
+        item = items[0]  # detailIntro2는 단일 아이템 반환
+        
+        # intro 정보를 JSONB로 저장
+        intro_info = {}
+        intro_fields = [
+            'heritage1', 'heritage2', 'heritage3', 'opendate', 'restdate',
+            'expguide', 'expagerange', 'accomcount', 'useseason', 'usetime',
+            'parking', 'chkbabycarriage', 'chkpet', 'chkcreditcard',
+            'infocenter', 'scale', 'facilities', 'program'
+        ]
+        
+        for field in intro_fields:
+            if field in item and item[field]:
+                intro_info[field] = self._clean_value(item[field])
+        
+        # 컨텐츠 타입별 테이블 매핑
+        content_type_table_map = {
+            '12': 'tourist_attractions',
+            '14': 'cultural_facilities', 
+            '15': 'festivals_events',
+            '25': 'travel_courses',
+            '28': 'leisure_sports',
+            '32': 'accommodations',
+            '38': 'shopping',
+            '39': 'restaurants'
+        }
+        
+        table_name = content_type_table_map.get(content_type_id)
+        if not table_name:
+            return {'success': False, 'error': f'알 수 없는 컨텐츠 타입: {content_type_id}'}
+        
+        # detail_intro_info 필드 업데이트
+        try:
+            update_query = f"""
+            UPDATE {table_name} 
+            SET detail_intro_info = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE content_id = %s
+            """
+            
+            self.db_manager.execute_update(
+                update_query, 
+                (self.db_manager.serialize_for_db(intro_info), content_id)
+            )
+            
+            self.logger.debug(f"✅ {table_name} 테이블 detailIntro2 정보 업데이트: {content_id}")
+            
+            return {
+                'success': True,
+                'updated_table': table_name,
+                'intro_fields_count': len(intro_info)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ {table_name} 테이블 intro 정보 업데이트 실패 ({content_id}): {e}")
+            return {'success': False, 'error': str(e)}
+    
+    async def _process_detail_info(self, content_id: str, content_type_id: str, raw_response: Dict, raw_data_id: Optional[str]) -> Dict:
+        """detailInfo2 API 응답 처리"""
+        
+        items = self._extract_items(raw_response)
+        if not items:
+            return {'success': False, 'error': 'detailInfo2 응답에 데이터가 없습니다'}
+        
+        # content_detail_info 테이블에 저장할 데이터 준비
+        detail_infos = []
+        for item in items:
+            detail_data = {
+                'content_id': content_id,
+                'content_type_id': content_type_id,
+                'info_name': self._clean_value(item.get('infoname')),
+                'info_text': self._clean_value(item.get('infotext')),
+                'serial_num': int(item.get('serialnum', 1)) if item.get('serialnum') else 1,
+                'raw_data_id': raw_data_id
+            }
+            detail_infos.append(detail_data)
+        
+        # content_detail_info 테이블에 배치 삽입
+        try:
+            success_count = self.db_manager.insert_content_detail_info_batch(detail_infos)
+            
+            # 기존 테이블의 detail_additional_info 필드도 업데이트
+            additional_info = {}
+            for item in items:
+                serial_num = item.get('serialnum', '1')
+                additional_info[f'info_{serial_num}'] = {
+                    'name': self._clean_value(item.get('infoname')),
+                    'text': self._clean_value(item.get('infotext'))
+                }
+            
+            # 컨텐츠 타입별 테이블 업데이트
+            content_type_table_map = {
+                '12': 'tourist_attractions',
+                '14': 'cultural_facilities', 
+                '15': 'festivals_events',
+                '25': 'travel_courses',
+                '28': 'leisure_sports',
+                '32': 'accommodations',
+                '38': 'shopping',
+                '39': 'restaurants'
+            }
+            
+            table_name = content_type_table_map.get(content_type_id)
+            if table_name:
+                update_query = f"""
+                UPDATE {table_name} 
+                SET detail_additional_info = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE content_id = %s
+                """
+                
+                self.db_manager.execute_update(
+                    update_query, 
+                    (self.db_manager.serialize_for_db(additional_info), content_id)
+                )
+            
+            self.logger.debug(f"✅ detailInfo2 정보 저장: {content_id} ({success_count}건)")
+            
+            return {
+                'success': True,
+                'detail_info_count': success_count,
+                'updated_table': table_name if table_name else None
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ detailInfo2 정보 저장 실패 ({content_id}): {e}")
+            return {'success': False, 'error': str(e)}
+    
+    async def _process_detail_images(self, content_id: str, content_type_id: str, raw_response: Dict, raw_data_id: Optional[str]) -> Dict:
+        """detailImage2 API 응답 처리"""
+        
+        items = self._extract_items(raw_response)
+        if not items:
+            return {'success': False, 'error': 'detailImage2 응답에 데이터가 없습니다'}
+        
+        # content_images 테이블에 저장할 데이터 준비
+        image_data = []
+        for item in items:
+            image_info = {
+                'content_id': content_id,
+                'content_type_id': content_type_id,
+                'img_name': self._clean_value(item.get('imgname')),
+                'origin_img_url': self._clean_value(item.get('originimgurl')),
+                'small_image_url': self._clean_value(item.get('smallimageurl')),
+                'serial_num': int(item.get('serialnum', 1)) if item.get('serialnum') else 1,
+                'cpyrht_div_cd': self._clean_value(item.get('cpyrhtDivCd')),
+                'raw_data_id': raw_data_id
+            }
+            image_data.append(image_info)
+        
+        # content_images 테이블에 배치 삽입
+        try:
+            success_count = self.db_manager.insert_content_images_batch(image_data)
+            
+            self.logger.debug(f"✅ detailImage2 정보 저장: {content_id} ({success_count}건)")
+            
+            return {
+                'success': True,
+                'image_count': success_count
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ detailImage2 정보 저장 실패 ({content_id}): {e}")
+            return {'success': False, 'error': str(e)}
 
 
 # 싱글톤 인스턴스

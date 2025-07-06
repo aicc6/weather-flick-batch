@@ -1773,25 +1773,33 @@ class UnifiedKTOClient:
         try:
             params = {
                 **self.default_params,
-                "contentId": content_id,
-                "contentTypeId": content_type_id,
-                "defaultYN": "Y",
-                "firstImageYN": "Y",
-                "areacodeYN": "Y",
-                "catcodeYN": "Y",
-                "addrinfoYN": "Y",
-                "mapinfoYN": "Y",
-                "overviewYN": "Y"
+                "contentId": content_id
             }
             
-            response = await self.api_client.call_api(
-                api_provider=APIProvider.KTO,
-                endpoint="detailCommon2",
-                params=params,
-                store_raw=store_raw
-            )
+            async with self.api_client:
+                response = await self.api_client.call_api(
+                    api_provider=APIProvider.KTO,
+                    endpoint="detailCommon2",
+                    params=params,
+                    store_raw=store_raw
+                )
             
             if response.success and response.data:
+                # 새로운 변환 파이프라인을 사용하여 데이터베이스에 저장
+                process_result = await self.transformation_pipeline.process_detailed_api_response(
+                    api_name="detailCommon2",
+                    content_id=content_id,
+                    content_type_id=content_type_id,
+                    raw_response=response.data,
+                    raw_data_id=response.raw_data_id
+                )
+                
+                if process_result.get('success'):
+                    self.logger.debug(f"✅ detailCommon2 정보 처리 성공: {content_id}")
+                else:
+                    self.logger.warning(f"⚠️ detailCommon2 정보 처리 실패: {content_id} - {process_result.get('error')}")
+                
+                # 원본 데이터 반환 (하위 호환성)
                 items = response.data.get("items", {}).get("item", [])
                 if items and not isinstance(items, list):
                     items = [items]
@@ -1811,14 +1819,30 @@ class UnifiedKTOClient:
                 "contentTypeId": content_type_id
             }
             
-            response = await self.api_client.call_api(
-                api_provider=APIProvider.KTO,
-                endpoint="detailIntro2",
-                params=params,
-                store_raw=store_raw
-            )
+            async with self.api_client:
+                response = await self.api_client.call_api(
+                    api_provider=APIProvider.KTO,
+                    endpoint="detailIntro2",
+                    params=params,
+                    store_raw=store_raw
+                )
             
             if response.success and response.data:
+                # 새로운 변환 파이프라인을 사용하여 데이터베이스에 저장
+                process_result = await self.transformation_pipeline.process_detailed_api_response(
+                    api_name="detailIntro2",
+                    content_id=content_id,
+                    content_type_id=content_type_id,
+                    raw_response=response.data,
+                    raw_data_id=response.raw_data_id
+                )
+                
+                if process_result.get('success'):
+                    self.logger.debug(f"✅ detailIntro2 정보 처리 성공: {content_id}")
+                else:
+                    self.logger.warning(f"⚠️ detailIntro2 정보 처리 실패: {content_id} - {process_result.get('error')}")
+                
+                # 원본 데이터 반환 (하위 호환성)
                 items = response.data.get("items", {}).get("item", [])
                 if items and not isinstance(items, list):
                     items = [items]
@@ -1838,14 +1862,30 @@ class UnifiedKTOClient:
                 "contentTypeId": content_type_id
             }
             
-            response = await self.api_client.call_api(
-                api_provider=APIProvider.KTO,
-                endpoint="detailInfo2",
-                params=params,
-                store_raw=store_raw
-            )
+            async with self.api_client:
+                response = await self.api_client.call_api(
+                    api_provider=APIProvider.KTO,
+                    endpoint="detailInfo2",
+                    params=params,
+                    store_raw=store_raw
+                )
             
             if response.success and response.data:
+                # 새로운 변환 파이프라인을 사용하여 데이터베이스에 저장
+                process_result = await self.transformation_pipeline.process_detailed_api_response(
+                    api_name="detailInfo2",
+                    content_id=content_id,
+                    content_type_id=content_type_id,
+                    raw_response=response.data,
+                    raw_data_id=response.raw_data_id
+                )
+                
+                if process_result.get('success'):
+                    self.logger.debug(f"✅ detailInfo2 정보 처리 성공: {content_id}")
+                else:
+                    self.logger.warning(f"⚠️ detailInfo2 정보 처리 실패: {content_id} - {process_result.get('error')}")
+                
+                # 원본 데이터 반환 (하위 호환성)
                 items = response.data.get("items", {}).get("item", [])
                 if items and not isinstance(items, list):
                     items = [items]
@@ -1862,18 +1902,34 @@ class UnifiedKTOClient:
             params = {
                 **self.default_params,
                 "contentId": content_id,
-                "imageYN": "Y",
-                "subImageYN": "Y"
+                "imageYN": "Y"
             }
             
-            response = await self.api_client.call_api(
-                api_provider=APIProvider.KTO,
-                endpoint="detailImage2",
-                params=params,
-                store_raw=store_raw
-            )
+            async with self.api_client:
+                response = await self.api_client.call_api(
+                    api_provider=APIProvider.KTO,
+                    endpoint="detailImage2",
+                    params=params,
+                    store_raw=store_raw
+                )
             
             if response.success and response.data:
+                # 새로운 변환 파이프라인을 사용하여 데이터베이스에 저장
+                # detailImage2는 content_type_id가 없으므로 기본값 사용
+                process_result = await self.transformation_pipeline.process_detailed_api_response(
+                    api_name="detailImage2",
+                    content_id=content_id,
+                    content_type_id="12",  # 기본값 (관광지)
+                    raw_response=response.data,
+                    raw_data_id=response.raw_data_id
+                )
+                
+                if process_result.get('success'):
+                    self.logger.debug(f"✅ detailImage2 정보 처리 성공: {content_id}")
+                else:
+                    self.logger.warning(f"⚠️ detailImage2 정보 처리 실패: {content_id} - {process_result.get('error')}")
+                
+                # 원본 데이터 반환 (하위 호환성)
                 items = response.data.get("items", {}).get("item", [])
                 if items and not isinstance(items, list):
                     items = [items]
