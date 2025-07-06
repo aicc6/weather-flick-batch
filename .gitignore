@@ -84,6 +84,7 @@ dump.rdb
 .coverage
 .pytest_cache/
 htmlcov/
+test_results/
 
 # Documentation builds
 docs/_build/
