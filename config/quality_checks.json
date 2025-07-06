@@ -30,10 +30,11 @@
       ]
     }
   },
-  "weather_forecast": {
+  "weather_forecasts": {
     "required_columns": [
       "region_code",
       "forecast_date",
+      "forecast_time",
       "forecast_type"
     ],
     "date_column": "forecast_date",
@@ -41,7 +42,7 @@
     "duplicate_key_columns": [
       "region_code",
       "forecast_date",
-      "forecast_type"
+      "forecast_time"
     ],
     "value_ranges": {
       "min_temp": [

@@ -325,6 +325,8 @@ class SyncDatabaseManager(BaseDatabaseManager):
         for data in forecast_data:
             formatted_item = {
                 "region_code": data.get("region_code"),
+                "nx": data.get("nx"),
+                "ny": data.get("ny"),
                 "forecast_date": data.get("forecast_date") or data.get("date"),
                 "forecast_time": data.get("forecast_time"),
                 "temperature": data.get("temperature") or data.get("temp"),
@@ -333,12 +335,21 @@ class SyncDatabaseManager(BaseDatabaseManager):
                 "humidity": data.get("humidity"),
                 "precipitation_probability": data.get("precipitation_probability")
                 or data.get("rain_prob"),
+                "precipitation_prob": data.get("precipitation_prob") or data.get("precipitation_probability") or data.get("rain_prob"),
                 "precipitation": data.get("precipitation") or data.get("rainfall"),
                 "wind_speed": data.get("wind_speed"),
+                "wind_direction": data.get("wind_direction"),
+                "sky_condition": data.get("sky_condition"),
                 "weather_condition": data.get("weather_condition")
                 or data.get("condition"),
+                "base_date": data.get("base_date"),
+                "base_time": data.get("base_time"),
+                "forecast_type": data.get("forecast_type", "short"),
+                "data_quality_score": data.get("data_quality_score"),
+                "raw_data_id": data.get("raw_data_id"),
                 "created_at": datetime.now(),
                 "updated_at": datetime.now(),
+                "last_sync_at": datetime.now(),
             }
             # None 값 제거
             formatted_item = {k: v for k, v in formatted_item.items() if v is not None}
@@ -360,7 +371,7 @@ class SyncDatabaseManager(BaseDatabaseManager):
             raise
 
     def insert_tourist_attractions(self, attractions: List[Dict[str, Any]]) -> int:
-        """관광지 정보 삽입/업데이트"""
+        """관광지 정보 삽입/업데이트 (새로운 10개 필드 지원)"""
         if not attractions:
             return 0
 
@@ -387,6 +398,7 @@ class SyncDatabaseManager(BaseDatabaseManager):
                 content_id = hashlib.md5(f"{title}_{region}".encode()).hexdigest()[:20]
 
             formatted_item = {
+                # 기본 필드들
                 "content_id": content_id,
                 "region_code": attraction.get("region_code")
                 or attraction.get("area_code"),
@@ -415,6 +427,19 @@ class SyncDatabaseManager(BaseDatabaseManager):
                 or attraction.get("firstimage"),
                 "phone": attraction.get("phone") or attraction.get("tel"),
                 "homepage": attraction.get("homepage"),
+                
+                # 새로 추가된 10개 필드들
+                "booktour": attraction.get("booktour") or attraction.get("book_tour"),
+                "createdtime": attraction.get("createdtime") or attraction.get("created_time"),
+                "modifiedtime": attraction.get("modifiedtime") or attraction.get("modified_time"),
+                "telname": attraction.get("telname") or attraction.get("tel_name"),
+                "faxno": attraction.get("faxno") or attraction.get("fax_no"),
+                "zipcode": attraction.get("zipcode") or attraction.get("zip_code"),
+                "mlevel": attraction.get("mlevel") or attraction.get("map_level"),
+                "detail_intro_info": attraction.get("detail_intro_info") or attraction.get("intro_info"),
+                "detail_additional_info": attraction.get("detail_additional_info") or attraction.get("additional_info"),
+                
+                # 시간 스탬프
                 "created_at": datetime.now(),
                 "updated_at": datetime.now(),
             }

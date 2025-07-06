@@ -133,17 +133,24 @@ class KTODataTransformer(BaseDataTransformer):
             "addr2": "address_detail",
             "mapx": "longitude",
             "mapy": "latitude",
-            "firstimage": "image_url",
+            "firstimage": "first_image",
             "firstimage2": "thumbnail_url",
             "areacode": "region_code",
             "sigungucode": "sigungu_code",
             "cat1": "category_large_code",
             "cat2": "category_medium_code",
             "cat3": "category_small_code",
-            "modifiedtime": "api_modified_time",
+            "modifiedtime": "modifiedtime",
             "tel": "phone_number",
             "overview": "description",
             "homepage": "homepage_url",
+            # 새로 추가된 필드들
+            "booktour": "booktour",
+            "createdtime": "createdtime",
+            "telname": "telname",
+            "faxno": "faxno",
+            "zipcode": "zipcode",
+            "mlevel": "mlevel",
         },
         "accommodations": {
             "contentid": "content_id",
@@ -151,11 +158,20 @@ class KTODataTransformer(BaseDataTransformer):
             "addr1": "address",
             "mapx": "longitude",
             "mapy": "latitude",
-            "firstimage": "image_url",
+            "firstimage": "first_image",
             "areacode": "region_code",
             "sigungucode": "sigungu_code",
             "tel": "phone_number",
-            "modifiedtime": "api_modified_time",
+            "modifiedtime": "modifiedtime",
+            # 새로 추가된 필드들
+            "booktour": "booktour",
+            "createdtime": "createdtime",
+            "telname": "telname",
+            "faxno": "faxno",
+            "zipcode": "zipcode",
+            "mlevel": "mlevel",
+            "homepage": "homepage",
+            "overview": "overview",
         },
         "festivals_events": {
             "contentid": "content_id",
@@ -163,12 +179,21 @@ class KTODataTransformer(BaseDataTransformer):
             "addr1": "address",
             "mapx": "longitude",
             "mapy": "latitude",
-            "firstimage": "image_url",
+            "firstimage": "first_image",
             "areacode": "region_code",
             "eventstartdate": "start_date",
             "eventenddate": "end_date",
             "tel": "phone_number",
-            "modifiedtime": "api_modified_time",
+            "modifiedtime": "modifiedtime",
+            # 새로 추가된 필드들
+            "booktour": "booktour",
+            "createdtime": "createdtime",
+            "telname": "telname",
+            "faxno": "faxno",
+            "zipcode": "zipcode",
+            "mlevel": "mlevel",
+            "homepage": "homepage",
+            "overview": "overview",
         },
         "restaurants": {
             "contentid": "content_id",
@@ -177,17 +202,24 @@ class KTODataTransformer(BaseDataTransformer):
             "addr2": "address_detail",
             "mapx": "longitude",
             "mapy": "latitude",
-            "firstimage": "image_url",
+            "firstimage": "first_image",
             "firstimage2": "thumbnail_url",
             "areacode": "region_code",
             "sigungucode": "sigungu_code",
             "cat1": "category_large_code",
             "cat2": "category_medium_code",
             "cat3": "category_small_code",
-            "modifiedtime": "api_modified_time",
+            "modifiedtime": "modifiedtime",
             "tel": "phone_number",
             "overview": "description",
             "homepage": "homepage_url",
+            # 새로 추가된 필드들
+            "booktour": "booktour",
+            "createdtime": "createdtime",
+            "telname": "telname",
+            "faxno": "faxno",
+            "zipcode": "zipcode",
+            "mlevel": "mlevel",
         },
         "pet_tour_info": {
             "contentid": "content_id",
@@ -289,6 +321,9 @@ class KTODataTransformer(BaseDataTransformer):
                 "medium_code": transformed.get("category_medium_code"),
                 "small_code": transformed.get("category_small_code"),
             }
+
+            # 상세 정보 처리 (JSONB 필드)
+            transformed = self._process_detailed_info(transformed, item)
 
             # 메타데이터 추가
             transformed.update(self._add_metadata("KTO_API"))
@@ -445,28 +480,107 @@ class KTODataTransformer(BaseDataTransformer):
             "processing_status": "processed",
         }
 
+    def _process_detailed_info(self, transformed: Dict, original_item: Dict) -> Dict:
+        """상세 정보 처리 (JSONB 필드 생성)"""
+        
+        # detail_intro_info 처리 (detailIntro2 API 응답)
+        intro_info = {}
+        intro_fields = [
+            'chkbabycarriage', 'chkcreditcard', 'chkpet', 'expagerange', 
+            'expguide', 'heritage1', 'heritage2', 'heritage3', 'infocenter',
+            'opendate', 'parking', 'restdate', 'useseason', 'usetime'
+        ]
+        
+        for field in intro_fields:
+            if field in original_item:
+                intro_info[field] = self._clean_value(original_item[field])
+        
+        if intro_info:
+            transformed["detail_intro_info"] = intro_info
+        
+        # detail_additional_info 처리 (detailInfo2 API 응답)
+        additional_info = {}
+        additional_fields = [
+            'contentid', 'fldgubun', 'infoname', 'infotext', 'serialnum'
+        ]
+        
+        for field in additional_fields:
+            if field in original_item:
+                additional_info[field] = self._clean_value(original_item[field])
+        
+        if additional_info:
+            transformed["detail_additional_info"] = additional_info
+        
+        # 새로운 필드들 후처리
+        transformed = self._process_new_fields(transformed)
+        
+        return transformed
+
+    def _process_new_fields(self, transformed: Dict) -> Dict:
+        """새로 추가된 필드들의 후처리"""
+        
+        # booktour 필드 정규화 (Y/N 값 확인)
+        if "booktour" in transformed:
+            booktour_value = transformed["booktour"]
+            if booktour_value and str(booktour_value).upper() not in ['Y', 'N']:
+                transformed["booktour"] = 'N'  # 기본값
+        
+        # 날짜 형식 검증 (createdtime, modifiedtime)
+        for date_field in ['createdtime', 'modifiedtime']:
+            if date_field in transformed and transformed[date_field]:
+                date_value = str(transformed[date_field])
+                if len(date_value) == 14 and date_value.isdigit():
+                    # YYYYMMDDHHMMSS 형식 유지
+                    pass
+                else:
+                    # 잘못된 형식이면 None으로 설정
+                    transformed[date_field] = None
+        
+        # mlevel 정수 변환
+        if "mlevel" in transformed and transformed["mlevel"]:
+            try:
+                transformed["mlevel"] = int(transformed["mlevel"])
+            except (ValueError, TypeError):
+                transformed["mlevel"] = None
+        
+        # 전화번호/팩스번호 형식 정리
+        for phone_field in ['telname', 'faxno']:
+            if phone_field in transformed and transformed[phone_field]:
+                phone_value = str(transformed[phone_field]).strip()
+                # 빈 문자열이면 None으로
+                if not phone_value:
+                    transformed[phone_field] = None
+        
+        # 우편번호 형식 검증
+        if "zipcode" in transformed and transformed["zipcode"]:
+            zipcode_value = str(transformed["zipcode"]).strip()
+            if len(zipcode_value) not in [5, 6] or not zipcode_value.isdigit():
+                transformed["zipcode"] = None
+        
+        return transformed
+
 
 class KMADataTransformer(BaseDataTransformer):
     """KMA API 데이터 변환기"""
 
-    # KMA 카테고리 코드 매핑
+    # KMA 카테고리 코드 매핑 (DB 컬럼명에 맞춤)
     CATEGORY_MAPPING = {
         "POP": "precipitation_probability",  # 강수확률
-        "PTY": "precipitation_type",  # 강수형태
-        "PCP": "precipitation_amount",  # 강수량
+        "PTY": "precipitation_type",  # 강수형태 (sky_condition에 매핑)
+        "PCP": "precipitation",  # 강수량
         "REH": "humidity",  # 습도
         "SNO": "snow_amount",  # 적설량
         "SKY": "sky_condition",  # 하늘상태
         "TMP": "temperature",  # 기온
-        "TMN": "min_temperature",  # 최저기온
-        "TMX": "max_temperature",  # 최고기온
+        "TMN": "min_temp",  # 최저기온
+        "TMX": "max_temp",  # 최고기온
         "UUU": "wind_u_component",  # 풍속(동서성분)
         "VVV": "wind_v_component",  # 풍속(남북성분)
         "WAV": "wave_height",  # 파고
         "VEC": "wind_direction",  # 풍향
         "WSD": "wind_speed",  # 풍속
-        "T1H": "current_temperature",  # 기온(1시간)
-        "RN1": "rainfall_1h",  # 1시간 강수량
+        "T1H": "temperature",  # 기온(1시간)
+        "RN1": "precipitation",  # 1시간 강수량
         "LGT": "lightning",  # 낙뢰
     }
 
@@ -478,9 +592,9 @@ class KMADataTransformer(BaseDataTransformer):
         if "getUltraSrtNcst" in endpoint:
             return "current_weather"
         elif "getUltraSrtFcst" in endpoint or "getVilageFcst" in endpoint:
-            return "weather_forecast"
+            return "weather_forecasts"
         else:
-            return "weather_forecast"  # 기본값
+            return "weather_forecasts"  # 기본값
 
     def transform(self, endpoint: str, raw_response: Dict) -> List[Dict]:
         """KMA API 응답을 표준 형식으로 변환"""
@@ -557,11 +671,12 @@ class KMADataTransformer(BaseDataTransformer):
                 forecast_data[key] = {
                     "base_date": base_date,
                     "base_time": base_time,
-                    "forecast_date": self._format_date(fcst_date),
+                    "forecast_date": fcst_date,  # YYYYMMDD 형식 유지 (DB 스키마에 맞춤)
                     "forecast_time": fcst_time,
-                    "forecast_datetime": self._format_datetime(fcst_date, fcst_time),
-                    "nx": nx,
-                    "ny": ny,
+                    "nx": int(nx) if nx else None,
+                    "ny": int(ny) if ny else None,
+                    "region_code": self._get_region_code_from_grid(nx, ny),
+                    "forecast_type": "short",
                     "data_source": "KMA_API",
                     "processed_at": datetime.utcnow().isoformat(),
                 }
@@ -617,8 +732,34 @@ class KMADataTransformer(BaseDataTransformer):
             else:
                 return value.strip()
 
-        except Exception:
-            return value
+        except Exception as e:
+            self.logger.warning(f"날씨 값 변환 실패 [{category}: {value}]: {e}")
+            return None
+
+    def _get_region_code_from_grid(self, nx: int, ny: int) -> str:
+        """격자 좌표에서 지역 코드 변환"""
+        # 기본적인 격자-지역 매핑 (실제로는 더 정교한 매핑이 필요)
+        grid_to_region = {
+            (60, 127): "1100000000",  # 서울
+            (98, 76): "2600000000",   # 부산
+            (89, 90): "2700000000",   # 대구
+            (55, 124): "2800000000",  # 인천
+            (67, 100): "2900000000",  # 광주
+            (68, 100): "3000000000",  # 대전
+            (102, 84): "3100000000",  # 울산
+            (52, 38): "5000000000",   # 제주
+        }
+        
+        # 격자 좌표로 지역 코드 찾기
+        if nx and ny:
+            region_code = grid_to_region.get((int(nx), int(ny)))
+            if region_code:
+                return region_code
+            else:
+                # 기본 지역 코드 (서울)
+                return "1100000000"
+        
+        return "1100000000"  # 기본값
 
 
 class DataValidatorRegistry:
@@ -853,6 +994,49 @@ class DataTransformationPipeline:
     def get_supported_providers(self) -> List[str]:
         """지원하는 API 제공자 목록 반환"""
         return list(self.transformers.keys())
+
+    def transform_data(self, api_provider: str, endpoint: str, raw_response: Dict) -> TransformationResult:
+        """원본 API 응답 데이터를 직접 변환 (테스트용)"""
+        
+        try:
+            transformation_start = time.time()
+            
+            # 1. 적절한 변환기 선택
+            transformer = self.transformers.get(api_provider)
+            if not transformer:
+                return TransformationResult.error_result(
+                    f"지원하지 않는 API 제공자: {api_provider}"
+                )
+
+            # 2. 데이터 변환 실행
+            processed_data = transformer.transform(endpoint, raw_response)
+
+            # 3. 데이터 유효성 검증
+            validation_result = self.validators.validate(api_provider, processed_data)
+
+            # 4. 변환 시간 계산
+            transformation_time_ms = int((time.time() - transformation_start) * 1000)
+
+            self.logger.info(
+                f"데이터 변환 완료 (테스트): {len(processed_data)}건 (품질점수: {validation_result.quality_score:.1f})"
+            )
+
+            return TransformationResult(
+                success=True,
+                processed_data=processed_data,
+                quality_score=validation_result.quality_score,
+                errors=validation_result.errors,
+                warnings=validation_result.warnings,
+                transformation_time_ms=transformation_time_ms,
+                input_count=len(raw_response.get("response", {}).get("body", {}).get("items", {}).get("item", [])),
+                output_count=len(processed_data),
+            )
+
+        except Exception as e:
+            transformation_time_ms = int((time.time() - transformation_start) * 1000)
+            self.logger.error(f"데이터 변환 실패 (테스트): {e}")
+
+            return TransformationResult.error_result(str(e))
 
 
 # 싱글톤 인스턴스

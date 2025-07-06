@@ -266,24 +266,37 @@ class WeatherDataJob(BaseJob):
     async def _save_weather_current_data(
         self, region_name: str, processed_data: List[Dict], raw_data_id: str
     ) -> int:
-        """현재 날씨 데이터 저장 (통합 구조)"""
+        """현재 날씨 데이터 저장 (배치 최적화)"""
         try:
-            saved_count = 0
+            if not processed_data:
+                return 0
+            
+            # 배치 INSERT 최적화 사용
+            from app.core.batch_insert_optimizer import optimize_weather_current_insert
+            
+            # 지역 코드 추가
+            region_code = self._get_region_code_from_name(region_name)
             for data in processed_data:
-                data["raw_data_id"] = raw_data_id
+                data["region_code"] = region_code
                 data["region_name"] = region_name
-                # 현재 날씨 테이블에 저장
-                await self.db_manager.execute_query(
-                    "INSERT INTO current_weather (region_code, temperature, humidity, raw_data_id) VALUES (%s, %s, %s, %s)",
-                    (
-                        self._get_region_code_from_name(region_name),
-                        data.get("temperature"),
-                        data.get("humidity"),
-                        raw_data_id,
-                    ),
+            
+            # 배치 INSERT 실행
+            result = await optimize_weather_current_insert(processed_data, raw_data_id)
+            
+            # 성능 로깅
+            if result.execution_time > 0:
+                self.logger.info(
+                    f"현재 날씨 배치 저장 완료: {result.successful_records}건, "
+                    f"소요시간: {result.execution_time:.2f}초, "
+                    f"성능: {result.records_per_second:.1f} records/sec"
                 )
-                saved_count += 1
-            return saved_count
+            
+            if result.error_details:
+                for error in result.error_details:
+                    self.logger.warning(f"배치 저장 부분 실패: {error}")
+            
+            return result.successful_records
+            
         except Exception as e:
             self.logger.error(f"현재 날씨 데이터 저장 실패: {e}")
             return 0
@@ -291,25 +304,42 @@ class WeatherDataJob(BaseJob):
     async def _save_weather_forecast_data(
         self, region_name: str, processed_data: List[Dict], raw_data_id: str
     ) -> int:
-        """예보 날씨 데이터 저장 (통합 구조)"""
+        """예보 날씨 데이터 저장 (배치 최적화)"""
         try:
-            saved_count = 0
+            if not processed_data:
+                return 0
+            
+            # 배치 INSERT 최적화 사용
+            from app.core.batch_insert_optimizer import optimize_weather_forecast_insert
+            
+            # 지역 코드 및 기본값 설정
+            region_code = self._get_region_code_from_name(region_name)
             for data in processed_data:
-                data["raw_data_id"] = raw_data_id
+                data["region_code"] = region_code
                 data["region_name"] = region_name
-                # 예보 테이블에 저장
-                await self.db_manager.execute_query(
-                    "INSERT INTO weather_forecasts (region_code, forecast_date, forecast_time, temperature, min_temp, max_temp, weather_condition, forecast_type, raw_data_id, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                    (
-                        self._get_region_code_from_name(region_name),
-                        data.get("forecast_date"),
-                        data.get("min_temp"),
-                        data.get("max_temp"),
-                        raw_data_id,
-                    ),
+                # 기본값 설정
+                data.setdefault("nx", 60)
+                data.setdefault("ny", 127)
+                data.setdefault("forecast_time", "1200")
+                data.setdefault("forecast_type", "short")
+            
+            # 배치 INSERT 실행
+            result = await optimize_weather_forecast_insert(processed_data, raw_data_id)
+            
+            # 성능 로깅
+            if result.execution_time > 0:
+                self.logger.info(
+                    f"예보 데이터 배치 저장 완료: {result.successful_records}건, "
+                    f"소요시간: {result.execution_time:.2f}초, "
+                    f"성능: {result.records_per_second:.1f} records/sec"
                 )
-                saved_count += 1
-            return saved_count
+            
+            if result.error_details:
+                for error in result.error_details:
+                    self.logger.warning(f"예보 배치 저장 부분 실패: {error}")
+            
+            return result.successful_records
+            
         except Exception as e:
             self.logger.error(f"예보 날씨 데이터 저장 실패: {e}")
             return 0

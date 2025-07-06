@@ -2,6 +2,7 @@
 데이터베이스 매니저 확장
 
 새로운 API 원데이터 관리 기능을 기존 database_manager에 확장
+배치 INSERT 최적화 기능 포함
 """
 
 import uuid
@@ -10,14 +11,23 @@ import json
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from app.core.database_manager import SyncDatabaseManager
+from app.core.batch_insert_optimizer import (
+    BatchInsertOptimizer, 
+    optimize_tourism_data_insert
+)
+from config.batch_optimization_config import (
+    get_tourism_batch_config,
+    BatchOptimizationConfig
+)
 
 
 class DatabaseManagerExtension:
-    """데이터베이스 매니저 확장 클래스"""
+    """데이터베이스 매니저 확장 클래스 (배치 최적화 포함)"""
 
     def __init__(self, db_manager: SyncDatabaseManager):
         self.db_manager = db_manager
         self.logger = logging.getLogger(__name__)
+        self.batch_optimizer = BatchInsertOptimizer(db_manager)
 
     def insert_raw_data(self, raw_data: Dict) -> str:
         """원본 API 데이터 삽입"""
@@ -213,15 +223,17 @@ class DatabaseManagerExtension:
             return 0
 
     def upsert_tourist_attraction(self, data: Dict) -> bool:
-        """관광지 데이터 UPSERT"""
+        """관광지 데이터 UPSERT (새로운 10개 필드 지원)"""
 
         query = """
         INSERT INTO tourist_attractions (
             content_id, region_code, attraction_name, category_code, category_name,
-            address, latitude, longitude, description, image_url, raw_data_id,
-            last_sync_at, data_quality_score, processing_status
+            address, latitude, longitude, description, image_url, homepage,
+            booktour, createdtime, modifiedtime, telname, faxno, zipcode, mlevel,
+            detail_intro_info, detail_additional_info,
+            raw_data_id, last_sync_at, data_quality_score, processing_status
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
         ON CONFLICT (content_id) DO UPDATE SET
             region_code = EXCLUDED.region_code,
@@ -233,6 +245,16 @@ class DatabaseManagerExtension:
             longitude = EXCLUDED.longitude,
             description = EXCLUDED.description,
             image_url = EXCLUDED.image_url,
+            homepage = EXCLUDED.homepage,
+            booktour = EXCLUDED.booktour,
+            createdtime = EXCLUDED.createdtime,
+            modifiedtime = EXCLUDED.modifiedtime,
+            telname = EXCLUDED.telname,
+            faxno = EXCLUDED.faxno,
+            zipcode = EXCLUDED.zipcode,
+            mlevel = EXCLUDED.mlevel,
+            detail_intro_info = EXCLUDED.detail_intro_info,
+            detail_additional_info = EXCLUDED.detail_additional_info,
             raw_data_id = EXCLUDED.raw_data_id,
             last_sync_at = EXCLUDED.last_sync_at,
             data_quality_score = EXCLUDED.data_quality_score,
@@ -250,7 +272,19 @@ class DatabaseManagerExtension:
             data.get("latitude"),
             data.get("longitude"),
             data.get("description"),
-            data.get("image_url"),
+            data.get("first_image") or data.get("image_url"),
+            data.get("homepage"),
+            # 새로 추가된 필드들
+            data.get("booktour") or data.get("book_tour"),
+            data.get("createdtime") or data.get("created_time"),
+            data.get("modifiedtime") or data.get("modified_time"),
+            data.get("telname") or data.get("tel_name"),
+            data.get("faxno") or data.get("fax_no"),
+            data.get("zipcode") or data.get("zip_code"),
+            data.get("mlevel") or data.get("map_level"),
+            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
+            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            # 메타데이터 필드들
             data.get("raw_data_id"),
             data.get("last_sync_at"),
             data.get("data_quality_score"),
@@ -267,14 +301,15 @@ class DatabaseManagerExtension:
     def upsert_accommodation(self, data: Dict) -> bool:
         """숙박 데이터 UPSERT"""
 
-        # accommodations 테이블 구조에 맞게 조정
         query = """
         INSERT INTO accommodations (
             content_id, region_code, accommodation_name, address, 
-            latitude, longitude, image_url, raw_data_id,
-            last_sync_at, data_quality_score
+            latitude, longitude, first_image,
+            homepage, booktour, createdtime, modifiedtime, telname, faxno, zipcode, mlevel,
+            detail_intro_info, detail_additional_info,
+            raw_data_id, last_sync_at, data_quality_score
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
         ON CONFLICT (content_id) DO UPDATE SET
             region_code = EXCLUDED.region_code,
@@ -282,7 +317,17 @@ class DatabaseManagerExtension:
             address = EXCLUDED.address,
             latitude = EXCLUDED.latitude,
             longitude = EXCLUDED.longitude,
-            image_url = EXCLUDED.image_url,
+            first_image = EXCLUDED.first_image,
+            homepage = EXCLUDED.homepage,
+            booktour = EXCLUDED.booktour,
+            createdtime = EXCLUDED.createdtime,
+            modifiedtime = EXCLUDED.modifiedtime,
+            telname = EXCLUDED.telname,
+            faxno = EXCLUDED.faxno,
+            zipcode = EXCLUDED.zipcode,
+            mlevel = EXCLUDED.mlevel,
+            detail_intro_info = EXCLUDED.detail_intro_info,
+            detail_additional_info = EXCLUDED.detail_additional_info,
             raw_data_id = EXCLUDED.raw_data_id,
             last_sync_at = EXCLUDED.last_sync_at,
             data_quality_score = EXCLUDED.data_quality_score,
@@ -296,7 +341,19 @@ class DatabaseManagerExtension:
             data.get("address"),
             data.get("latitude"),
             data.get("longitude"),
-            data.get("image_url"),
+            data.get("first_image"),
+            # 새로 추가된 필드들
+            data.get("homepage"),
+            data.get("booktour") or data.get("book_tour"),
+            data.get("createdtime") or data.get("created_time"),
+            data.get("modifiedtime") or data.get("modified_time"),
+            data.get("telname") or data.get("tel_name"),
+            data.get("faxno") or data.get("fax_no"),
+            data.get("zipcode") or data.get("zip_code"),
+            data.get("mlevel") or data.get("map_level"),
+            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
+            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            # 메타데이터 필드들
             data.get("raw_data_id"),
             data.get("last_sync_at"),
             data.get("data_quality_score"),
@@ -315,10 +372,12 @@ class DatabaseManagerExtension:
         query = """
         INSERT INTO festivals_events (
             content_id, region_code, event_name, address,
-            latitude, longitude, image_url, start_date, end_date,
+            latitude, longitude, first_image, event_start_date, event_end_date,
+            homepage, booktour, createdtime, modifiedtime, telname, faxno, zipcode, mlevel,
+            detail_intro_info, detail_additional_info,
             raw_data_id, last_sync_at, data_quality_score
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
         ON CONFLICT (content_id) DO UPDATE SET
             region_code = EXCLUDED.region_code,
@@ -326,9 +385,19 @@ class DatabaseManagerExtension:
             address = EXCLUDED.address,
             latitude = EXCLUDED.latitude,
             longitude = EXCLUDED.longitude,
-            image_url = EXCLUDED.image_url,
-            start_date = EXCLUDED.start_date,
-            end_date = EXCLUDED.end_date,
+            first_image = EXCLUDED.first_image,
+            event_start_date = EXCLUDED.event_start_date,
+            event_end_date = EXCLUDED.event_end_date,
+            homepage = EXCLUDED.homepage,
+            booktour = EXCLUDED.booktour,
+            createdtime = EXCLUDED.createdtime,
+            modifiedtime = EXCLUDED.modifiedtime,
+            telname = EXCLUDED.telname,
+            faxno = EXCLUDED.faxno,
+            zipcode = EXCLUDED.zipcode,
+            mlevel = EXCLUDED.mlevel,
+            detail_intro_info = EXCLUDED.detail_intro_info,
+            detail_additional_info = EXCLUDED.detail_additional_info,
             raw_data_id = EXCLUDED.raw_data_id,
             last_sync_at = EXCLUDED.last_sync_at,
             data_quality_score = EXCLUDED.data_quality_score,
@@ -342,9 +411,21 @@ class DatabaseManagerExtension:
             data.get("address"),
             data.get("latitude"),
             data.get("longitude"),
-            data.get("image_url"),
-            data.get("start_date"),
-            data.get("end_date"),
+            data.get("first_image"),
+            data.get("event_start_date") or data.get("start_date"),
+            data.get("event_end_date") or data.get("end_date"),
+            # 새로 추가된 필드들
+            data.get("homepage"),
+            data.get("booktour") or data.get("book_tour"),
+            data.get("createdtime") or data.get("created_time"),
+            data.get("modifiedtime") or data.get("modified_time"),
+            data.get("telname") or data.get("tel_name"),
+            data.get("faxno") or data.get("fax_no"),
+            data.get("zipcode") or data.get("zip_code"),
+            data.get("mlevel") or data.get("map_level"),
+            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
+            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            # 메타데이터 필드들
             data.get("raw_data_id"),
             data.get("last_sync_at"),
             data.get("data_quality_score"),
@@ -435,9 +516,12 @@ class DatabaseManagerExtension:
             content_id, region_code, restaurant_name, address, detail_address,
             latitude, longitude, first_image, first_image_small, tel,
             category_code, sub_category_code, sigungu_code,
-            overview, homepage, raw_data_id, last_sync_at, data_quality_score
+            overview, homepage,
+            booktour, createdtime, modifiedtime, telname, faxno, zipcode, mlevel,
+            detail_intro_info, detail_additional_info,
+            raw_data_id, last_sync_at, data_quality_score
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
         ON CONFLICT (content_id) DO UPDATE SET
             region_code = EXCLUDED.region_code,
@@ -454,6 +538,15 @@ class DatabaseManagerExtension:
             sigungu_code = EXCLUDED.sigungu_code,
             overview = EXCLUDED.overview,
             homepage = EXCLUDED.homepage,
+            booktour = EXCLUDED.booktour,
+            createdtime = EXCLUDED.createdtime,
+            modifiedtime = EXCLUDED.modifiedtime,
+            telname = EXCLUDED.telname,
+            faxno = EXCLUDED.faxno,
+            zipcode = EXCLUDED.zipcode,
+            mlevel = EXCLUDED.mlevel,
+            detail_intro_info = EXCLUDED.detail_intro_info,
+            detail_additional_info = EXCLUDED.detail_additional_info,
             raw_data_id = EXCLUDED.raw_data_id,
             last_sync_at = EXCLUDED.last_sync_at,
             data_quality_score = EXCLUDED.data_quality_score,
@@ -465,10 +558,10 @@ class DatabaseManagerExtension:
             data.get("region_code"),
             data.get("restaurant_name"),
             data.get("address"),
-            data.get("address_detail"),  # 변환된 데이터에서 온 필드명
+            data.get("addr2"),  # KTO API의 addr2 필드 사용
             data.get("latitude"),
             data.get("longitude"),
-            data.get("image_url"),      # 변환된 데이터에서 온 필드명
+            data.get("first_image"),      # 변환된 데이터에서 온 필드명
             data.get("thumbnail_url"),  # 변환된 데이터에서 온 필드명
             data.get("phone_number"),   # 변환된 데이터에서 온 필드명
             data.get("category_large_code"),   # 변환된 데이터에서 온 필드명
@@ -476,6 +569,17 @@ class DatabaseManagerExtension:
             data.get("sigungu_code"),
             data.get("description"),    # 변환된 데이터에서 온 필드명
             data.get("homepage_url"),   # 변환된 데이터에서 온 필드명
+            # 새로 추가된 필드들
+            data.get("booktour") or data.get("book_tour"),
+            data.get("createdtime") or data.get("created_time"),
+            data.get("modifiedtime") or data.get("modified_time"),
+            data.get("telname") or data.get("tel_name"),
+            data.get("faxno") or data.get("fax_no"),
+            data.get("zipcode") or data.get("zip_code"),
+            data.get("mlevel") or data.get("map_level"),
+            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
+            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            # 메타데이터 필드들
             data.get("raw_data_id"),
             data.get("last_sync_at"),
             data.get("data_quality_score"),
@@ -546,6 +650,529 @@ class DatabaseManagerExtension:
             self.logger.error(f"품질 임계값 조회 실패: {e}")
             return {}
 
+    def upsert_content_images(self, image_data: Dict) -> bool:
+        """컨텐츠 이미지 정보 UPSERT"""
+        try:
+            query = """
+            INSERT INTO content_images (
+                content_id, content_type_id, img_name, origin_img_url, 
+                small_image_url, serial_num, cpyrht_div_cd, img_size,
+                img_width, img_height, raw_data_id, data_quality_score,
+                processing_status, last_sync_at, created_at, updated_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            ON CONFLICT (content_id, serial_num) 
+            DO UPDATE SET 
+                img_name = EXCLUDED.img_name,
+                origin_img_url = EXCLUDED.origin_img_url,
+                small_image_url = EXCLUDED.small_image_url,
+                cpyrht_div_cd = EXCLUDED.cpyrht_div_cd,
+                img_size = EXCLUDED.img_size,
+                img_width = EXCLUDED.img_width,
+                img_height = EXCLUDED.img_height,
+                updated_at = CURRENT_TIMESTAMP
+            """
+            
+            current_time = datetime.now()
+            params = (
+                image_data.get("content_id"),
+                image_data.get("content_type_id"),
+                image_data.get("img_name"),
+                image_data.get("origin_img_url"),
+                image_data.get("small_image_url"),
+                image_data.get("serial_num", 1),
+                image_data.get("cpyrht_div_cd"),
+                image_data.get("img_size"),
+                image_data.get("img_width"),
+                image_data.get("img_height"),
+                image_data.get("raw_data_id"),
+                image_data.get("data_quality_score", 85.0),
+                image_data.get("processing_status", "processed"),
+                current_time,
+                current_time,
+                current_time
+            )
+            
+            self.db_manager.execute_update(query, params)
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"컨텐츠 이미지 저장 실패: {e}")
+            return False
+
+    def upsert_content_detail_info(self, detail_data: Dict) -> bool:
+        """컨텐츠 상세 정보 UPSERT"""
+        try:
+            query = """
+            INSERT INTO content_detail_info (
+                content_id, content_type_id, info_name, info_text,
+                serial_num, raw_data_id, created_at, updated_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            ON CONFLICT (content_id, serial_num)
+            DO UPDATE SET
+                info_name = EXCLUDED.info_name,
+                info_text = EXCLUDED.info_text,
+                updated_at = CURRENT_TIMESTAMP
+            """
+            
+            current_time = datetime.now()
+            params = (
+                detail_data.get("content_id"),
+                detail_data.get("content_type_id"),
+                detail_data.get("info_name"),
+                detail_data.get("info_text"),
+                detail_data.get("serial_num", 1),
+                detail_data.get("raw_data_id"),
+                current_time,
+                current_time
+            )
+            
+            self.db_manager.execute_update(query, params)
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"컨텐츠 상세 정보 저장 실패: {e}")
+            return False
+
+    def insert_content_images_batch(self, images: List[Dict]) -> int:
+        """컨텐츠 이미지 정보 배치 삽입"""
+        try:
+            if not images:
+                return 0
+            
+            success_count = 0
+            for image in images:
+                if self.upsert_content_images(image):
+                    success_count += 1
+            
+            self.logger.info(f"컨텐츠 이미지 배치 삽입 완료: {success_count}/{len(images)}")
+            return success_count
+            
+        except Exception as e:
+            self.logger.error(f"컨텐츠 이미지 배치 삽입 실패: {e}")
+            return 0
+
+    def insert_content_detail_info_batch(self, details: List[Dict]) -> int:
+        """컨텐츠 상세 정보 배치 삽입"""
+        try:
+            if not details:
+                return 0
+            
+            success_count = 0
+            for detail in details:
+                if self.upsert_content_detail_info(detail):
+                    success_count += 1
+            
+            self.logger.info(f"컨텐츠 상세 정보 배치 삽입 완료: {success_count}/{len(details)}")
+            return success_count
+            
+        except Exception as e:
+            self.logger.error(f"컨텐츠 상세 정보 배치 삽입 실패: {e}")
+            return 0
+
+    def upsert_cultural_facility(self, data: Dict) -> bool:
+        """문화시설 데이터 UPSERT"""
+
+        query = """
+        INSERT INTO cultural_facilities (
+            content_id, region_code, sigungu_code, facility_name, category_code, sub_category_code,
+            address, detail_address, latitude, longitude, zipcode, tel,
+            homepage, overview, first_image, first_image_small,
+            facility_type, admission_fee, operating_hours, parking_info, rest_date, use_season, use_time,
+            booktour, createdtime, modifiedtime, telname, faxno, mlevel,
+            detail_intro_info, detail_additional_info,
+            raw_data_id, last_sync_at, data_quality_score, processing_status
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+        )
+        ON CONFLICT (content_id) DO UPDATE SET
+            region_code = EXCLUDED.region_code,
+            sigungu_code = EXCLUDED.sigungu_code,
+            facility_name = EXCLUDED.facility_name,
+            category_code = EXCLUDED.category_code,
+            sub_category_code = EXCLUDED.sub_category_code,
+            address = EXCLUDED.address,
+            detail_address = EXCLUDED.detail_address,
+            latitude = EXCLUDED.latitude,
+            longitude = EXCLUDED.longitude,
+            zipcode = EXCLUDED.zipcode,
+            tel = EXCLUDED.tel,
+            homepage = EXCLUDED.homepage,
+            overview = EXCLUDED.overview,
+            first_image = EXCLUDED.first_image,
+            first_image_small = EXCLUDED.first_image_small,
+            facility_type = EXCLUDED.facility_type,
+            admission_fee = EXCLUDED.admission_fee,
+            operating_hours = EXCLUDED.operating_hours,
+            parking_info = EXCLUDED.parking_info,
+            rest_date = EXCLUDED.rest_date,
+            use_season = EXCLUDED.use_season,
+            use_time = EXCLUDED.use_time,
+            booktour = EXCLUDED.booktour,
+            createdtime = EXCLUDED.createdtime,
+            modifiedtime = EXCLUDED.modifiedtime,
+            telname = EXCLUDED.telname,
+            faxno = EXCLUDED.faxno,
+            mlevel = EXCLUDED.mlevel,
+            detail_intro_info = EXCLUDED.detail_intro_info,
+            detail_additional_info = EXCLUDED.detail_additional_info,
+            raw_data_id = EXCLUDED.raw_data_id,
+            last_sync_at = EXCLUDED.last_sync_at,
+            data_quality_score = EXCLUDED.data_quality_score,
+            processing_status = EXCLUDED.processing_status,
+            updated_at = CURRENT_TIMESTAMP
+        """
+
+        params = (
+            data.get("content_id"),
+            data.get("region_code"),
+            data.get("sigungu_code"),
+            data.get("facility_name"),
+            data.get("category_code"),
+            data.get("sub_category_code"),
+            data.get("address"),
+            data.get("detail_address") or data.get("addr2"),
+            data.get("latitude"),
+            data.get("longitude"),
+            data.get("zipcode") or data.get("zip_code"),
+            data.get("tel"),
+            data.get("homepage"),
+            data.get("overview"),
+            data.get("first_image"),
+            data.get("first_image_small"),
+            data.get("facility_type"),
+            data.get("admission_fee"),
+            data.get("operating_hours"),
+            data.get("parking_info"),
+            data.get("rest_date"),
+            data.get("use_season"),
+            data.get("use_time"),
+            # 새로 추가된 필드들
+            data.get("booktour") or data.get("book_tour"),
+            data.get("createdtime") or data.get("created_time"),
+            data.get("modifiedtime") or data.get("modified_time"),
+            data.get("telname") or data.get("tel_name"),
+            data.get("faxno") or data.get("fax_no"),
+            data.get("mlevel") or data.get("map_level"),
+            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
+            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            # 메타데이터 필드들
+            data.get("raw_data_id"),
+            data.get("last_sync_at"),
+            data.get("data_quality_score"),
+            data.get("processing_status"),
+        )
+
+        try:
+            self.db_manager.execute_update(query, params)
+            return True
+        except Exception as e:
+            self.logger.error(f"문화시설 데이터 UPSERT 실패: {e}")
+            return False
+
+    def upsert_travel_course(self, data: Dict) -> bool:
+        """여행코스 데이터 UPSERT"""
+
+        query = """
+        INSERT INTO travel_courses (
+            content_id, region_code, sigungu_code, course_name, category_code, sub_category_code,
+            address, detail_address, latitude, longitude, zipcode, tel,
+            homepage, overview, first_image, first_image_small,
+            course_theme, course_distance, required_time, difficulty_level, schedule,
+            booktour, createdtime, modifiedtime, telname, faxno, mlevel,
+            detail_intro_info, detail_additional_info,
+            raw_data_id, last_sync_at, data_quality_score, processing_status
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+        )
+        ON CONFLICT (content_id) DO UPDATE SET
+            region_code = EXCLUDED.region_code,
+            sigungu_code = EXCLUDED.sigungu_code,
+            course_name = EXCLUDED.course_name,
+            category_code = EXCLUDED.category_code,
+            sub_category_code = EXCLUDED.sub_category_code,
+            address = EXCLUDED.address,
+            detail_address = EXCLUDED.detail_address,
+            latitude = EXCLUDED.latitude,
+            longitude = EXCLUDED.longitude,
+            zipcode = EXCLUDED.zipcode,
+            tel = EXCLUDED.tel,
+            homepage = EXCLUDED.homepage,
+            overview = EXCLUDED.overview,
+            first_image = EXCLUDED.first_image,
+            first_image_small = EXCLUDED.first_image_small,
+            course_theme = EXCLUDED.course_theme,
+            course_distance = EXCLUDED.course_distance,
+            required_time = EXCLUDED.required_time,
+            difficulty_level = EXCLUDED.difficulty_level,
+            schedule = EXCLUDED.schedule,
+            booktour = EXCLUDED.booktour,
+            createdtime = EXCLUDED.createdtime,
+            modifiedtime = EXCLUDED.modifiedtime,
+            telname = EXCLUDED.telname,
+            faxno = EXCLUDED.faxno,
+            mlevel = EXCLUDED.mlevel,
+            detail_intro_info = EXCLUDED.detail_intro_info,
+            detail_additional_info = EXCLUDED.detail_additional_info,
+            raw_data_id = EXCLUDED.raw_data_id,
+            last_sync_at = EXCLUDED.last_sync_at,
+            data_quality_score = EXCLUDED.data_quality_score,
+            processing_status = EXCLUDED.processing_status,
+            updated_at = CURRENT_TIMESTAMP
+        """
+
+        params = (
+            data.get("content_id"),
+            data.get("region_code"),
+            data.get("sigungu_code"),
+            data.get("course_name"),
+            data.get("category_code"),
+            data.get("sub_category_code"),
+            data.get("address"),
+            data.get("detail_address") or data.get("addr2"),
+            data.get("latitude"),
+            data.get("longitude"),
+            data.get("zipcode") or data.get("zip_code"),
+            data.get("tel"),
+            data.get("homepage"),
+            data.get("overview"),
+            data.get("first_image"),
+            data.get("first_image_small"),
+            data.get("course_theme"),
+            data.get("course_distance"),
+            data.get("required_time"),
+            data.get("difficulty_level"),
+            data.get("schedule"),
+            # 새로 추가된 필드들
+            data.get("booktour") or data.get("book_tour"),
+            data.get("createdtime") or data.get("created_time"),
+            data.get("modifiedtime") or data.get("modified_time"),
+            data.get("telname") or data.get("tel_name"),
+            data.get("faxno") or data.get("fax_no"),
+            data.get("mlevel") or data.get("map_level"),
+            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
+            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            # 메타데이터 필드들
+            data.get("raw_data_id"),
+            data.get("last_sync_at"),
+            data.get("data_quality_score"),
+            data.get("processing_status"),
+        )
+
+        try:
+            self.db_manager.execute_update(query, params)
+            return True
+        except Exception as e:
+            self.logger.error(f"여행코스 데이터 UPSERT 실패: {e}")
+            return False
+
+    def upsert_leisure_sport(self, data: Dict) -> bool:
+        """레포츠 데이터 UPSERT"""
+
+        query = """
+        INSERT INTO leisure_sports (
+            content_id, region_code, sigungu_code, facility_name, category_code, sub_category_code,
+            address, detail_address, latitude, longitude, zipcode, tel,
+            homepage, overview, first_image, first_image_small,
+            sports_type, reservation_info, operating_hours, admission_fee, parking_info, rental_info, capacity,
+            booktour, createdtime, modifiedtime, telname, faxno, mlevel,
+            detail_intro_info, detail_additional_info,
+            raw_data_id, last_sync_at, data_quality_score, processing_status
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+        )
+        ON CONFLICT (content_id) DO UPDATE SET
+            region_code = EXCLUDED.region_code,
+            sigungu_code = EXCLUDED.sigungu_code,
+            facility_name = EXCLUDED.facility_name,
+            category_code = EXCLUDED.category_code,
+            sub_category_code = EXCLUDED.sub_category_code,
+            address = EXCLUDED.address,
+            detail_address = EXCLUDED.detail_address,
+            latitude = EXCLUDED.latitude,
+            longitude = EXCLUDED.longitude,
+            zipcode = EXCLUDED.zipcode,
+            tel = EXCLUDED.tel,
+            homepage = EXCLUDED.homepage,
+            overview = EXCLUDED.overview,
+            first_image = EXCLUDED.first_image,
+            first_image_small = EXCLUDED.first_image_small,
+            sports_type = EXCLUDED.sports_type,
+            reservation_info = EXCLUDED.reservation_info,
+            operating_hours = EXCLUDED.operating_hours,
+            admission_fee = EXCLUDED.admission_fee,
+            parking_info = EXCLUDED.parking_info,
+            rental_info = EXCLUDED.rental_info,
+            capacity = EXCLUDED.capacity,
+            booktour = EXCLUDED.booktour,
+            createdtime = EXCLUDED.createdtime,
+            modifiedtime = EXCLUDED.modifiedtime,
+            telname = EXCLUDED.telname,
+            faxno = EXCLUDED.faxno,
+            mlevel = EXCLUDED.mlevel,
+            detail_intro_info = EXCLUDED.detail_intro_info,
+            detail_additional_info = EXCLUDED.detail_additional_info,
+            raw_data_id = EXCLUDED.raw_data_id,
+            last_sync_at = EXCLUDED.last_sync_at,
+            data_quality_score = EXCLUDED.data_quality_score,
+            processing_status = EXCLUDED.processing_status,
+            updated_at = CURRENT_TIMESTAMP
+        """
+
+        params = (
+            data.get("content_id"),
+            data.get("region_code"),
+            data.get("sigungu_code"),
+            data.get("facility_name"),
+            data.get("category_code"),
+            data.get("sub_category_code"),
+            data.get("address"),
+            data.get("detail_address") or data.get("addr2"),
+            data.get("latitude"),
+            data.get("longitude"),
+            data.get("zipcode") or data.get("zip_code"),
+            data.get("tel"),
+            data.get("homepage"),
+            data.get("overview"),
+            data.get("first_image"),
+            data.get("first_image_small"),
+            data.get("sports_type"),
+            data.get("reservation_info"),
+            data.get("operating_hours"),
+            data.get("admission_fee"),
+            data.get("parking_info"),
+            data.get("rental_info"),
+            data.get("capacity"),
+            # 새로 추가된 필드들
+            data.get("booktour") or data.get("book_tour"),
+            data.get("createdtime") or data.get("created_time"),
+            data.get("modifiedtime") or data.get("modified_time"),
+            data.get("telname") or data.get("tel_name"),
+            data.get("faxno") or data.get("fax_no"),
+            data.get("mlevel") or data.get("map_level"),
+            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
+            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            # 메타데이터 필드들
+            data.get("raw_data_id"),
+            data.get("last_sync_at"),
+            data.get("data_quality_score"),
+            data.get("processing_status"),
+        )
+
+        try:
+            self.db_manager.execute_update(query, params)
+            return True
+        except Exception as e:
+            self.logger.error(f"레포츠 데이터 UPSERT 실패: {e}")
+            return False
+
+    def upsert_shopping(self, data: Dict) -> bool:
+        """쇼핑 데이터 UPSERT"""
+
+        query = """
+        INSERT INTO shopping (
+            content_id, region_code, sigungu_code, shop_name, category_code, sub_category_code,
+            address, detail_address, latitude, longitude, zipcode, tel,
+            homepage, overview, first_image, first_image_small,
+            shop_type, opening_hours, rest_date, parking_info, credit_card, pet_allowed, baby_carriage, sale_item, fair_day,
+            booktour, createdtime, modifiedtime, telname, faxno, mlevel,
+            detail_intro_info, detail_additional_info,
+            raw_data_id, last_sync_at, data_quality_score, processing_status
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+        )
+        ON CONFLICT (content_id) DO UPDATE SET
+            region_code = EXCLUDED.region_code,
+            sigungu_code = EXCLUDED.sigungu_code,
+            shop_name = EXCLUDED.shop_name,
+            category_code = EXCLUDED.category_code,
+            sub_category_code = EXCLUDED.sub_category_code,
+            address = EXCLUDED.address,
+            detail_address = EXCLUDED.detail_address,
+            latitude = EXCLUDED.latitude,
+            longitude = EXCLUDED.longitude,
+            zipcode = EXCLUDED.zipcode,
+            tel = EXCLUDED.tel,
+            homepage = EXCLUDED.homepage,
+            overview = EXCLUDED.overview,
+            first_image = EXCLUDED.first_image,
+            first_image_small = EXCLUDED.first_image_small,
+            shop_type = EXCLUDED.shop_type,
+            opening_hours = EXCLUDED.opening_hours,
+            rest_date = EXCLUDED.rest_date,
+            parking_info = EXCLUDED.parking_info,
+            credit_card = EXCLUDED.credit_card,
+            pet_allowed = EXCLUDED.pet_allowed,
+            baby_carriage = EXCLUDED.baby_carriage,
+            sale_item = EXCLUDED.sale_item,
+            fair_day = EXCLUDED.fair_day,
+            booktour = EXCLUDED.booktour,
+            createdtime = EXCLUDED.createdtime,
+            modifiedtime = EXCLUDED.modifiedtime,
+            telname = EXCLUDED.telname,
+            faxno = EXCLUDED.faxno,
+            mlevel = EXCLUDED.mlevel,
+            detail_intro_info = EXCLUDED.detail_intro_info,
+            detail_additional_info = EXCLUDED.detail_additional_info,
+            raw_data_id = EXCLUDED.raw_data_id,
+            last_sync_at = EXCLUDED.last_sync_at,
+            data_quality_score = EXCLUDED.data_quality_score,
+            processing_status = EXCLUDED.processing_status,
+            updated_at = CURRENT_TIMESTAMP
+        """
+
+        params = (
+            data.get("content_id"),
+            data.get("region_code"),
+            data.get("sigungu_code"),
+            data.get("shop_name"),
+            data.get("category_code"),
+            data.get("sub_category_code"),
+            data.get("address"),
+            data.get("detail_address") or data.get("addr2"),
+            data.get("latitude"),
+            data.get("longitude"),
+            data.get("zipcode") or data.get("zip_code"),
+            data.get("tel"),
+            data.get("homepage"),
+            data.get("overview"),
+            data.get("first_image"),
+            data.get("first_image_small"),
+            data.get("shop_type"),
+            data.get("opening_hours"),
+            data.get("rest_date"),
+            data.get("parking_info"),
+            data.get("credit_card"),
+            data.get("pet_allowed"),
+            data.get("baby_carriage"),
+            data.get("sale_item"),
+            data.get("fair_day"),
+            # 새로 추가된 필드들
+            data.get("booktour") or data.get("book_tour"),
+            data.get("createdtime") or data.get("created_time"),
+            data.get("modifiedtime") or data.get("modified_time"),
+            data.get("telname") or data.get("tel_name"),
+            data.get("faxno") or data.get("fax_no"),
+            data.get("mlevel") or data.get("map_level"),
+            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
+            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            # 메타데이터 필드들
+            data.get("raw_data_id"),
+            data.get("last_sync_at"),
+            data.get("data_quality_score"),
+            data.get("processing_status"),
+        )
+
+        try:
+            self.db_manager.execute_update(query, params)
+            return True
+        except Exception as e:
+            self.logger.error(f"쇼핑 데이터 UPSERT 실패: {e}")
+            return False
+
 
 # 기존 database_manager에 확장 기능 추가
 def extend_database_manager(db_manager: SyncDatabaseManager) -> SyncDatabaseManager:
@@ -565,8 +1192,18 @@ def extend_database_manager(db_manager: SyncDatabaseManager) -> SyncDatabaseMana
     db_manager.upsert_festival_event = extension.upsert_festival_event
     db_manager.upsert_pet_tour_info = extension.upsert_pet_tour_info
     db_manager.upsert_restaurant = extension.upsert_restaurant
+    db_manager.upsert_cultural_facility = extension.upsert_cultural_facility
+    db_manager.upsert_travel_course = extension.upsert_travel_course
+    db_manager.upsert_leisure_sport = extension.upsert_leisure_sport
+    db_manager.upsert_shopping = extension.upsert_shopping
     db_manager.get_api_call_statistics = extension.get_api_call_statistics
     db_manager.get_data_quality_thresholds = extension.get_data_quality_thresholds
+    
+    # 새로운 테이블 지원 메서드 추가
+    db_manager.upsert_content_images = extension.upsert_content_images
+    db_manager.upsert_content_detail_info = extension.upsert_content_detail_info
+    db_manager.insert_content_images_batch = extension.insert_content_images_batch
+    db_manager.insert_content_detail_info_batch = extension.insert_content_detail_info_batch
 
     return db_manager
 

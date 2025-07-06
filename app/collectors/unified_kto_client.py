@@ -296,6 +296,28 @@ class UnifiedKTOClient:
                     error_msg = f"법정동 코드 수집 실패: {e}"
                     self.logger.error(error_msg)
                     collection_results["errors"].append(error_msg)
+
+            # 상세 정보 수집 (detailCommon2, detailIntro2, detailInfo2, detailImage2)
+            if include_new_apis:
+                self.logger.info("=== 상세 정보 수집 시작 ===")
+                
+                try:
+                    detail_collection_result = await self.collect_detailed_information(
+                        content_types=content_types or list(self.content_types.keys()),
+                        max_content_ids=50,  # 테스트용으로 제한
+                        store_raw=store_raw,
+                        auto_transform=auto_transform
+                    )
+                    collection_results["new_apis_collected"]["detailed_info"] = detail_collection_result
+                    collection_results["total_raw_records"] += detail_collection_result.get("total_raw_records", 0)
+                    collection_results["total_processed_records"] += detail_collection_result.get("total_processed_records", 0)
+                    
+                    self.logger.info(f"상세 정보 수집 완료: 원본 {detail_collection_result.get('total_raw_records', 0)}건")
+                    
+                except Exception as e:
+                    error_msg = f"상세 정보 수집 실패: {e}"
+                    self.logger.error(error_msg)
+                    collection_results["errors"].append(error_msg)
                 
                 self.logger.info("=== 신규 API 수집 완료 ===")
 
@@ -1645,6 +1667,222 @@ class UnifiedKTOClient:
 
             self.logger.info(f"카테고리 코드 수집 완료: {len(category_codes)}개")
             return category_codes
+
+    async def collect_detailed_information(
+        self,
+        content_types: List[str],
+        max_content_ids: int = 100,
+        store_raw: bool = True,
+        auto_transform: bool = True
+    ) -> Dict:
+        """상세 정보 수집 (detailCommon2, detailIntro2, detailInfo2, detailImage2)"""
+        
+        result = {
+            "total_raw_records": 0,
+            "total_processed_records": 0,
+            "content_types_processed": {},
+            "errors": []
+        }
+        
+        for content_type_id in content_types:
+            content_name = self.content_types.get(content_type_id, f"unknown_{content_type_id}")
+            self.logger.info(f"=== {content_name} 상세 정보 수집 시작 ===")
+            
+            try:
+                # 기존 content_id들 가져오기
+                content_ids = await self._get_existing_content_ids(content_type_id, max_content_ids)
+                
+                if not content_ids:
+                    self.logger.warning(f"{content_name}: 기존 콘텐츠 ID를 찾을 수 없음")
+                    continue
+                
+                content_result = {
+                    "content_ids_processed": len(content_ids),
+                    "detail_common": 0,
+                    "detail_intro": 0,
+                    "detail_info": 0,
+                    "detail_images": 0,
+                    "errors": []
+                }
+                
+                # 각 content_id에 대해 상세 정보 수집
+                for i, content_id in enumerate(content_ids):
+                    if i % 10 == 0:
+                        self.logger.info(f"{content_name}: {i+1}/{len(content_ids)} 처리 중...")
+                    
+                    try:
+                        # 1. detailCommon2 - 기본 상세 정보
+                        detail_common = await self.collect_detail_common(content_id, content_type_id, store_raw)
+                        if detail_common:
+                            content_result["detail_common"] += 1
+                            result["total_raw_records"] += 1
+                        
+                        # 2. detailIntro2 - 소개 정보  
+                        detail_intro = await self.collect_detail_intro(content_id, content_type_id, store_raw)
+                        if detail_intro:
+                            content_result["detail_intro"] += 1
+                            result["total_raw_records"] += 1
+                        
+                        # 3. detailInfo2 - 추가 상세 정보
+                        detail_info = await self.collect_detail_info(content_id, content_type_id, store_raw)
+                        if detail_info:
+                            content_result["detail_info"] += 1
+                            result["total_raw_records"] += 1
+                        
+                        # 4. detailImage2 - 이미지 정보
+                        detail_images = await self.collect_detail_images(content_id, store_raw)
+                        if detail_images:
+                            content_result["detail_images"] += 1
+                            result["total_raw_records"] += 1
+                        
+                        # API 호출 간격 조정
+                        await asyncio.sleep(0.2)
+                        
+                    except Exception as e:
+                        error_msg = f"{content_name} {content_id} 상세정보 수집 실패: {e}"
+                        content_result["errors"].append(error_msg)
+                        self.logger.error(error_msg)
+                
+                result["content_types_processed"][content_name] = content_result
+                self.logger.info(f"{content_name} 상세 정보 수집 완료: {content_result}")
+                
+            except Exception as e:
+                error_msg = f"{content_name} 상세 정보 수집 실패: {e}"
+                result["errors"].append(error_msg)
+                self.logger.error(error_msg)
+        
+        return result
+
+    async def _get_existing_content_ids(self, content_type_id: str, limit: int) -> List[str]:
+        """기존 데이터베이스에서 content_id 조회"""
+        table_name = self.content_types.get(content_type_id)
+        if not table_name:
+            return []
+        
+        try:
+            # 데이터베이스에서 기존 content_id들 조회
+            query = f"SELECT content_id FROM {table_name} WHERE content_id IS NOT NULL LIMIT %s"
+            result = self.db_manager.execute_query(query, (limit,))
+            return [row[0] for row in result if row[0]]
+        except Exception as e:
+            self.logger.error(f"기존 content_id 조회 실패: {e}")
+            return []
+
+    async def collect_detail_common(self, content_id: str, content_type_id: str, store_raw: bool = True) -> Optional[Dict]:
+        """detailCommon2 API 호출 - 기본 상세 정보"""
+        try:
+            params = {
+                **self.default_params,
+                "contentId": content_id,
+                "contentTypeId": content_type_id,
+                "defaultYN": "Y",
+                "firstImageYN": "Y",
+                "areacodeYN": "Y",
+                "catcodeYN": "Y",
+                "addrinfoYN": "Y",
+                "mapinfoYN": "Y",
+                "overviewYN": "Y"
+            }
+            
+            response = await self.api_client.call_api(
+                api_provider=APIProvider.KTO,
+                endpoint="detailCommon2",
+                params=params,
+                store_raw=store_raw
+            )
+            
+            if response.success and response.data:
+                items = response.data.get("items", {}).get("item", [])
+                if items and not isinstance(items, list):
+                    items = [items]
+                return items[0] if items else None
+            
+        except Exception as e:
+            self.logger.error(f"detailCommon2 호출 실패 (content_id: {content_id}): {e}")
+        
+        return None
+
+    async def collect_detail_intro(self, content_id: str, content_type_id: str, store_raw: bool = True) -> Optional[Dict]:
+        """detailIntro2 API 호출 - 소개 정보"""
+        try:
+            params = {
+                **self.default_params,
+                "contentId": content_id,
+                "contentTypeId": content_type_id
+            }
+            
+            response = await self.api_client.call_api(
+                api_provider=APIProvider.KTO,
+                endpoint="detailIntro2",
+                params=params,
+                store_raw=store_raw
+            )
+            
+            if response.success and response.data:
+                items = response.data.get("items", {}).get("item", [])
+                if items and not isinstance(items, list):
+                    items = [items]
+                return items[0] if items else None
+            
+        except Exception as e:
+            self.logger.error(f"detailIntro2 호출 실패 (content_id: {content_id}): {e}")
+        
+        return None
+
+    async def collect_detail_info(self, content_id: str, content_type_id: str, store_raw: bool = True) -> Optional[List[Dict]]:
+        """detailInfo2 API 호출 - 추가 상세 정보"""
+        try:
+            params = {
+                **self.default_params,
+                "contentId": content_id,
+                "contentTypeId": content_type_id
+            }
+            
+            response = await self.api_client.call_api(
+                api_provider=APIProvider.KTO,
+                endpoint="detailInfo2",
+                params=params,
+                store_raw=store_raw
+            )
+            
+            if response.success and response.data:
+                items = response.data.get("items", {}).get("item", [])
+                if items and not isinstance(items, list):
+                    items = [items]
+                return items
+            
+        except Exception as e:
+            self.logger.error(f"detailInfo2 호출 실패 (content_id: {content_id}): {e}")
+        
+        return None
+
+    async def collect_detail_images(self, content_id: str, store_raw: bool = True) -> Optional[List[Dict]]:
+        """detailImage2 API 호출 - 이미지 정보"""
+        try:
+            params = {
+                **self.default_params,
+                "contentId": content_id,
+                "imageYN": "Y",
+                "subImageYN": "Y"
+            }
+            
+            response = await self.api_client.call_api(
+                api_provider=APIProvider.KTO,
+                endpoint="detailImage2",
+                params=params,
+                store_raw=store_raw
+            )
+            
+            if response.success and response.data:
+                items = response.data.get("items", {}).get("item", [])
+                if items and not isinstance(items, list):
+                    items = [items]
+                return items
+            
+        except Exception as e:
+            self.logger.error(f"detailImage2 호출 실패 (content_id: {content_id}): {e}")
+        
+        return None
 
     async def get_api_statistics(self) -> Dict:
         """API 호출 통계 조회"""

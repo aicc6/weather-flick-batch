@@ -249,8 +249,8 @@ class DatabaseUsageExamples:
         """오류 처리 예제"""
 
         try:
-            # 잘못된 쿼리
-            self.db.fetch_all("SELECT * FROM non_existent_table")
+            # 의도적으로 실패하는 쿼리 (테스트용 - 실제 존재하지 않는 테이블)
+            self.db.fetch_all("SELECT * FROM intentionally_non_existent_test_table")
         except QueryError as e:
             self.logger.error(f"쿼리 오류: {e}")
         except ConnectionError as e:

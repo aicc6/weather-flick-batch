@@ -20,6 +20,7 @@ from urllib.parse import urlencode
 
 from app.core.database_manager_extension import get_extended_database_manager
 from app.core.multi_api_key_manager import get_api_key_manager, APIProvider
+from app.core.smart_cache_ttl_optimizer import get_smart_ttl_optimizer, get_optimal_cache_ttl, update_cache_access_stats
 
 
 @dataclass
@@ -66,6 +67,9 @@ class UnifiedAPIClient:
 
         # API 키 매니저
         self.key_manager = get_api_key_manager()
+        
+        # 스마트 TTL 최적화 매니저
+        self.smart_ttl_optimizer = get_smart_ttl_optimizer()
 
         # 파일 매니저
         try:
@@ -79,7 +83,7 @@ class UnifiedAPIClient:
         # HTTP 세션 설정
         self.session = None
 
-        # 만료 시간 설정 (API별)
+        # 만료 시간 설정 (API별) - 스마트 TTL과 함께 사용
         self.expiry_settings = {
             APIProvider.KTO: timedelta(days=7),  # KTO 데이터는 7일
             APIProvider.KMA: timedelta(hours=6),  # 날씨 데이터는 6시간
@@ -432,7 +436,12 @@ class UnifiedAPIClient:
         if use_cache:
             cached_response = await self._get_cached_data(cache_key)
             if cached_response:
+                # 캐시 히트 통계 업데이트
+                await update_cache_access_stats(cache_key, was_hit=True)
                 return APIResponse.from_cache(cached_response)
+            else:
+                # 캐시 미스 통계 업데이트
+                await update_cache_access_stats(cache_key, was_hit=False)
 
         # 2. API 호출 실행
         start_time = time.time()
@@ -480,9 +489,22 @@ class UnifiedAPIClient:
                     api_key,
                 )
 
-            # 4. 캐시 저장
+            # 4. 캐시 저장 (스마트 TTL 최적화 적용)
             if use_cache:
-                await self._set_cached_data(cache_key, response_data, cache_ttl)
+                # 스마트 TTL 계산
+                optimal_ttl = await get_optimal_cache_ttl(
+                    cache_key, 
+                    api_provider, 
+                    endpoint,
+                    context={"params": params, "response_size": len(str(response_data))}
+                )
+                
+                # 사용자 지정 TTL과 최적 TTL 중 더 적절한 값 선택
+                final_ttl = optimal_ttl if cache_ttl == 3600 else min(cache_ttl, optimal_ttl * 1.2)
+                
+                await self._set_cached_data(cache_key, response_data, final_ttl)
+                
+                self.logger.debug(f"캐시 저장: {cache_key}, TTL: {final_ttl}초 (최적화: {optimal_ttl}초)")
 
             self.logger.info(
                 f"API 호출 성공: {api_provider.value}/{endpoint} ({duration_ms}ms)"

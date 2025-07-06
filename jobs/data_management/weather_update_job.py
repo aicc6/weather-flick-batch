@@ -292,31 +292,16 @@ class WeatherUpdateJob:
     ) -> int:
         """날씨 예보 정보 저장"""
         try:
-            # 기존 예보 데이터 삭제 (7일 이후)
-            cleanup_query = """
-            DELETE FROM weather_forecast
-            WHERE region_code = %s
-            AND forecast_date < CURRENT_DATE - INTERVAL '7 days'
-            """
-            self.db_manager.execute_update(cleanup_query, (region_code,))
-
             # 새 예보 데이터 저장
             insert_query = """
-            INSERT INTO weather_forecast (
-                region_code, forecast_date, forecast_type, min_temp, max_temp,
-                precipitation_prob, weather_condition, forecast_issued_at
+            INSERT INTO weather_forecasts (
+                region_code, nx, ny, forecast_date, forecast_time, forecast_type, min_temp, max_temp,
+                precipitation_prob, weather_condition, created_at
             ) VALUES (
-                %s, %s, 'short',
+                %s, %s, %s, %s, '1200', 'short',
                 %s, %s, %s,
                 %s, NOW()
             )
-            ON CONFLICT ON CONSTRAINT unique_weather_forecast_region_date_type
-            DO UPDATE SET
-                min_temp = EXCLUDED.min_temp,
-                max_temp = EXCLUDED.max_temp,
-                precipitation_prob = EXCLUDED.precipitation_prob,
-                weather_condition = EXCLUDED.weather_condition,
-                forecast_issued_at = EXCLUDED.forecast_issued_at
             """
 
             count = 0
@@ -324,6 +309,8 @@ class WeatherUpdateJob:
                 forecast_date = forecast["forecast_time"].date()
                 params = (
                     region_code,
+                    forecast.get("nx", 60),  # 기본값 설정 (서울 기준)
+                    forecast.get("ny", 127),  # 기본값 설정 (서울 기준)
                     forecast_date,
                     forecast["temp_min"],
                     forecast["temp_max"],
