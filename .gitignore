@@ -42,6 +42,7 @@ env/
 # Logs (ignore all log files)
 logs/*.log
 logs/*.log.*
+logs/*.txt
 *.log
 
 # Data - 새로운 구조 반영

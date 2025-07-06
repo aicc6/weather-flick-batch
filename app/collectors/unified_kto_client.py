@@ -14,17 +14,30 @@ from app.core.unified_api_client import get_unified_api_client, APIProvider
 from app.processors.data_transformation_pipeline import get_transformation_pipeline
 from app.core.database_manager_extension import get_extended_database_manager
 from app.core.multi_api_key_manager import get_api_key_manager
+from app.core.concurrent_api_manager import (
+    get_concurrent_api_manager, 
+    APICallTask, 
+    APICallPriority, 
+    ConcurrencyConfig
+)
 
 
 class UnifiedKTOClient:
     """통합 KTO API 클라이언트"""
 
-    def __init__(self):
+    def __init__(self, enable_parallel: bool = True, concurrency_config: ConcurrencyConfig = None):
         self.logger = logging.getLogger(__name__)
         self.api_client = get_unified_api_client()
         self.transformation_pipeline = get_transformation_pipeline()
         self.db_manager = get_extended_database_manager()
         self.key_manager = get_api_key_manager()
+        
+        # 병렬 처리 설정
+        self.enable_parallel = enable_parallel
+        if enable_parallel:
+            self.concurrent_manager = get_concurrent_api_manager(concurrency_config)
+        else:
+            self.concurrent_manager = None
 
         # 기본 파라미터 설정
         self.default_params = {
@@ -1984,6 +1997,299 @@ class UnifiedKTOClient:
             self.logger.error(f"detailImage2 호출 실패 (content_id: {content_id}): {e}")
         
         return None
+
+    async def collect_detailed_info_parallel(
+        self,
+        content_ids: List[str],
+        content_type_id: str,
+        store_raw: bool = True,
+        batch_size: int = 50
+    ) -> Dict:
+        """병렬 상세 정보 수집"""
+        
+        if not self.enable_parallel or not self.concurrent_manager:
+            self.logger.warning("병렬 처리가 비활성화됨. 순차 처리로 대체")
+            return await self._collect_detailed_info_sequential(content_ids, content_type_id, store_raw)
+        
+        self.logger.info(f"병렬 상세 정보 수집 시작: {len(content_ids)}개 컨텐츠")
+        
+        # 결과 초기화
+        result = {
+            "started_at": datetime.utcnow().isoformat(),
+            "content_type_id": content_type_id,
+            "total_content_ids": len(content_ids),
+            "detail_common": 0,
+            "detail_intro": 0,
+            "detail_info": 0,
+            "detail_images": 0,
+            "successful_content_ids": [],
+            "failed_content_ids": [],
+            "errors": []
+        }
+        
+        # 배치 단위로 처리
+        for batch_start in range(0, len(content_ids), batch_size):
+            batch_end = min(batch_start + batch_size, len(content_ids))
+            batch_content_ids = content_ids[batch_start:batch_end]
+            
+            self.logger.info(f"배치 {batch_start//batch_size + 1} 처리 중: {len(batch_content_ids)}개 컨텐츠")
+            
+            # 배치별 API 작업 생성
+            batch_tasks = []
+            
+            for content_id in batch_content_ids:
+                # detailCommon2 작업
+                batch_tasks.append(APICallTask(
+                    task_id=f"detail_common_{content_id}",
+                    api_provider=APIProvider.KTO,
+                    endpoint="detailCommon2",
+                    params={
+                        **self.default_params,
+                        "contentId": content_id,
+                        "contentTypeId": content_type_id
+                    },
+                    callback=self._create_api_callback("detailCommon2", content_id, content_type_id, store_raw),
+                    priority=APICallPriority.HIGH
+                ))
+                
+                # detailIntro2 작업
+                batch_tasks.append(APICallTask(
+                    task_id=f"detail_intro_{content_id}",
+                    api_provider=APIProvider.KTO,
+                    endpoint="detailIntro2",
+                    params={
+                        **self.default_params,
+                        "contentId": content_id,
+                        "contentTypeId": content_type_id
+                    },
+                    callback=self._create_api_callback("detailIntro2", content_id, content_type_id, store_raw),
+                    priority=APICallPriority.MEDIUM
+                ))
+                
+                # detailInfo2 작업
+                batch_tasks.append(APICallTask(
+                    task_id=f"detail_info_{content_id}",
+                    api_provider=APIProvider.KTO,
+                    endpoint="detailInfo2",
+                    params={
+                        **self.default_params,
+                        "contentId": content_id,
+                        "contentTypeId": content_type_id
+                    },
+                    callback=self._create_api_callback("detailInfo2", content_id, content_type_id, store_raw),
+                    priority=APICallPriority.MEDIUM
+                ))
+                
+                # detailImage2 작업
+                batch_tasks.append(APICallTask(
+                    task_id=f"detail_images_{content_id}",
+                    api_provider=APIProvider.KTO,
+                    endpoint="detailImage2",
+                    params={
+                        **self.default_params,
+                        "contentId": content_id,
+                        "imageYN": "Y"
+                    },
+                    callback=self._create_api_callback("detailImage2", content_id, "12", store_raw),
+                    priority=APICallPriority.LOW
+                ))
+            
+            # 배치 병렬 실행
+            batch_results = await self.concurrent_manager.execute_batch(batch_tasks)
+            
+            # 결과 집계
+            content_success_count = {}
+            
+            for batch_result in batch_results:
+                if batch_result['success']:
+                    # 작업 ID에서 API 타입과 content_id 추출
+                    task_id = batch_result['task_id']
+                    
+                    # API 타입 매핑
+                    if task_id.startswith('detail_common_'):
+                        api_type = 'detail_common'
+                        content_id = task_id.replace('detail_common_', '')
+                    elif task_id.startswith('detail_intro_'):
+                        api_type = 'detail_intro'
+                        content_id = task_id.replace('detail_intro_', '')
+                    elif task_id.startswith('detail_info_'):
+                        api_type = 'detail_info'
+                        content_id = task_id.replace('detail_info_', '')
+                    elif task_id.startswith('detail_images_'):
+                        api_type = 'detail_images'
+                        content_id = task_id.replace('detail_images_', '')
+                    else:
+                        self.logger.warning(f"알 수 없는 작업 ID 형식: {task_id}")
+                        continue
+                    
+                    result[api_type] += 1
+                    
+                    # 컨텐츠별 성공 카운트
+                    if content_id not in content_success_count:
+                        content_success_count[content_id] = 0
+                    content_success_count[content_id] += 1
+                    
+                else:
+                    # 실패한 작업 처리
+                    task_id = batch_result['task_id']
+                    
+                    # API 타입 매핑
+                    if task_id.startswith('detail_common_'):
+                        api_type = 'detail_common'
+                        content_id = task_id.replace('detail_common_', '')
+                    elif task_id.startswith('detail_intro_'):
+                        api_type = 'detail_intro'
+                        content_id = task_id.replace('detail_intro_', '')
+                    elif task_id.startswith('detail_info_'):
+                        api_type = 'detail_info'
+                        content_id = task_id.replace('detail_info_', '')
+                    elif task_id.startswith('detail_images_'):
+                        api_type = 'detail_images'
+                        content_id = task_id.replace('detail_images_', '')
+                    else:
+                        api_type = 'unknown'
+                        content_id = task_id
+                    
+                    error_msg = f"{content_id} {api_type}: {batch_result['error']}"
+                    result["errors"].append(error_msg)
+            
+            # 성공/실패한 컨텐츠 ID 분류
+            for content_id in batch_content_ids:
+                success_count = content_success_count.get(content_id, 0)
+                if success_count > 0:
+                    result["successful_content_ids"].append({
+                        "content_id": content_id,
+                        "successful_apis": success_count,
+                        "total_apis": 4
+                    })
+                else:
+                    result["failed_content_ids"].append(content_id)
+            
+            # 배치 간 대기 (API 과부하 방지)
+            if batch_end < len(content_ids):
+                await asyncio.sleep(1.0)
+        
+        result["completed_at"] = datetime.utcnow().isoformat()
+        
+        # 통계 요약
+        successful_content_count = len(result["successful_content_ids"])
+        success_rate = (successful_content_count / len(content_ids) * 100) if content_ids else 0
+        
+        self.logger.info(
+            f"병렬 상세 정보 수집 완료: {successful_content_count}/{len(content_ids)} 컨텐츠 성공 "
+            f"({success_rate:.1f}%)"
+        )
+        
+        return result
+    
+    def _create_api_callback(self, api_name: str, content_id: str, content_type_id: str, store_raw: bool):
+        """API 콜백 함수 생성"""
+        
+        async def callback(endpoint: str, params: Dict) -> Optional[Dict]:
+            async with self.api_client:
+                response = await self.api_client.call_api(
+                    api_provider=APIProvider.KTO,
+                    endpoint=endpoint,
+                    params=params,
+                    store_raw=store_raw
+                )
+            
+            if response.success and response.data:
+                # 데이터 변환 파이프라인 처리
+                process_result = await self.transformation_pipeline.process_detailed_api_response(
+                    api_name=api_name,
+                    content_id=content_id,
+                    content_type_id=content_type_id,
+                    raw_response=response.data,
+                    raw_data_id=response.raw_data_id
+                )
+                
+                if process_result.get('success'):
+                    self.logger.debug(f"✅ {api_name} 정보 처리 성공: {content_id}")
+                    return response.data
+                else:
+                    self.logger.warning(f"⚠️ {api_name} 정보 처리 실패: {content_id} - {process_result.get('error')}")
+                    return None
+            
+            return None
+        
+        return callback
+    
+    async def _collect_detailed_info_sequential(
+        self,
+        content_ids: List[str],
+        content_type_id: str,
+        store_raw: bool = True
+    ) -> Dict:
+        """순차 상세 정보 수집 (기존 방식)"""
+        
+        self.logger.info(f"순차 상세 정보 수집 시작: {len(content_ids)}개 컨텐츠")
+        
+        result = {
+            "started_at": datetime.utcnow().isoformat(),
+            "content_type_id": content_type_id,
+            "total_content_ids": len(content_ids),
+            "detail_common": 0,
+            "detail_intro": 0,
+            "detail_info": 0,
+            "detail_images": 0,
+            "successful_content_ids": [],
+            "failed_content_ids": [],
+            "errors": []
+        }
+        
+        for i, content_id in enumerate(content_ids):
+            if i % 10 == 0:
+                self.logger.info(f"순차 처리: {i+1}/{len(content_ids)} 진행 중...")
+            
+            success_count = 0
+            
+            try:
+                # detailCommon2
+                detail_common = await self.collect_detail_common(content_id, content_type_id, store_raw)
+                if detail_common:
+                    result["detail_common"] += 1
+                    success_count += 1
+                
+                # detailIntro2
+                detail_intro = await self.collect_detail_intro(content_id, content_type_id, store_raw)
+                if detail_intro:
+                    result["detail_intro"] += 1
+                    success_count += 1
+                
+                # detailInfo2
+                detail_info = await self.collect_detail_info(content_id, content_type_id, store_raw)
+                if detail_info:
+                    result["detail_info"] += 1
+                    success_count += 1
+                
+                # detailImage2
+                detail_images = await self.collect_detail_images(content_id, store_raw)
+                if detail_images:
+                    result["detail_images"] += 1
+                    success_count += 1
+                
+                if success_count > 0:
+                    result["successful_content_ids"].append({
+                        "content_id": content_id,
+                        "successful_apis": success_count,
+                        "total_apis": 4
+                    })
+                else:
+                    result["failed_content_ids"].append(content_id)
+                
+                # API 호출 간격
+                await asyncio.sleep(0.2)
+                
+            except Exception as e:
+                error_msg = f"{content_id} 상세정보 수집 실패: {e}"
+                result["errors"].append(error_msg)
+                result["failed_content_ids"].append(content_id)
+                self.logger.error(error_msg)
+        
+        result["completed_at"] = datetime.utcnow().isoformat()
+        
+        return result
 
     async def get_api_statistics(self) -> Dict:
         """API 호출 통계 조회"""

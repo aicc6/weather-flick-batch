@@ -16,6 +16,7 @@ import logging
 from abc import ABC, abstractmethod
 
 from config.settings import get_database_config
+from app.core.database_connection_pool import get_connection_pool, PoolConfig
 
 
 class DatabaseError(Exception):
@@ -86,35 +87,25 @@ class BaseDatabaseManager(ABC):
 
 
 class SyncDatabaseManager(BaseDatabaseManager):
-    """동기 데이터베이스 매니저"""
+    """동기 데이터베이스 매니저 (커넥션 풀 사용)"""
 
-    def __init__(self):
+    def __init__(self, pool_config: PoolConfig = None):
         super().__init__()
-        self._connection_pool = None
+        self.connection_pool = get_connection_pool(pool_config)
+        
+        # 커넥션 풀 초기화
+        try:
+            self.connection_pool.initialize_sync_pool()
+            self.logger.info("동기 데이터베이스 매니저 초기화 완료 (커넥션 풀 사용)")
+        except Exception as e:
+            self.logger.error(f"커넥션 풀 초기화 실패: {e}")
+            raise
 
     @contextmanager
     def get_connection(self) -> Generator[psycopg2.extensions.connection, None, None]:
-        """연결 컨텍스트 매니저"""
-        connection = None
-        try:
-            connection = psycopg2.connect(
-                host=self.config.host,
-                user=self.config.user,
-                password=self.config.password,
-                database=self.config.database,
-                port=self.config.port,
-            )
-            connection.autocommit = False
+        """커넥션 풀에서 연결 획득"""
+        with self.connection_pool.get_sync_connection() as connection:
             yield connection
-            connection.commit()
-        except Exception as e:
-            if connection:
-                connection.rollback()
-            self.logger.error(f"데이터베이스 연결 오류: {e}")
-            raise ConnectionError(f"데이터베이스 연결 실패: {e}")
-        finally:
-            if connection:
-                connection.close()
 
     @contextmanager
     def get_cursor(self) -> Generator[psycopg2.extras.RealDictCursor, None, None]:
@@ -505,46 +496,17 @@ class SyncDatabaseManager(BaseDatabaseManager):
 
 
 class AsyncDatabaseManager(BaseDatabaseManager):
-    """비동기 데이터베이스 매니저"""
+    """비동기 데이터베이스 매니저 (커넥션 풀 사용)"""
 
-    def __init__(self):
+    def __init__(self, pool_config: PoolConfig = None):
         super().__init__()
-        self._connection_pool: Optional[asyncpg.Pool] = None
-
-    async def _get_pool(self) -> asyncpg.Pool:
-        """연결 풀 가져오기 (지연 초기화)"""
-        if self._connection_pool is None:
-            try:
-                self._connection_pool = await asyncpg.create_pool(
-                    host=self.config.host,
-                    user=self.config.user,
-                    password=self.config.password,
-                    database=self.config.database,
-                    port=self.config.port,
-                    min_size=1,
-                    max_size=10,
-                )
-                self.logger.info("비동기 데이터베이스 연결 풀 생성 완료")
-            except Exception as e:
-                self.logger.error(f"연결 풀 생성 실패: {e}")
-                raise ConnectionError(f"연결 풀 생성 실패: {e}")
-        return self._connection_pool
+        self.connection_pool = get_connection_pool(pool_config)
 
     @asynccontextmanager
     async def get_connection(self) -> AsyncGenerator[asyncpg.Connection, None]:
-        """비동기 연결 컨텍스트 매니저"""
-        pool = await self._get_pool()
-        connection = None
-        try:
-            connection = await pool.acquire()
-            async with connection.transaction():
-                yield connection
-        except Exception as e:
-            self.logger.error(f"비동기 데이터베이스 연결 오류: {e}")
-            raise ConnectionError(f"비동기 데이터베이스 연결 실패: {e}")
-        finally:
-            if connection:
-                await pool.release(connection)
+        """커넥션 풀에서 비동기 연결 획득"""
+        async with self.connection_pool.get_async_connection() as connection:
+            yield connection
 
     async def fetch_all(
         self, query: str, params: Optional[tuple] = None
