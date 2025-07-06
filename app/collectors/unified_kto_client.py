@@ -1828,6 +1828,11 @@ class UnifiedKTOClient:
                 )
             
             if response.success and response.data:
+                # 데이터 타입 확인
+                if not isinstance(response.data, dict):
+                    self.logger.warning(f"⚠️ detailIntro2 응답이 dict가 아님: {type(response.data)} - {response.data}")
+                    return None
+                
                 # 새로운 변환 파이프라인을 사용하여 데이터베이스에 저장
                 process_result = await self.transformation_pipeline.process_detailed_api_response(
                     api_name="detailIntro2",
@@ -1843,10 +1848,20 @@ class UnifiedKTOClient:
                     self.logger.warning(f"⚠️ detailIntro2 정보 처리 실패: {content_id} - {process_result.get('error')}")
                 
                 # 원본 데이터 반환 (하위 호환성)
-                items = response.data.get("items", {}).get("item", [])
-                if items and not isinstance(items, list):
-                    items = [items]
-                return items[0] if items else None
+                try:
+                    items_data = response.data.get("items", {})
+                    # items가 빈 문자열인 경우 처리
+                    if items_data == "" or not items_data:
+                        self.logger.debug(f"detailIntro2 데이터 없음: {response.data}")
+                        return None
+                    
+                    items = items_data.get("item", [])
+                    if items and not isinstance(items, list):
+                        items = [items]
+                    return items[0] if items else None
+                except (AttributeError, TypeError) as e:
+                    self.logger.warning(f"⚠️ detailIntro2 데이터 접근 실패: {e} - {response.data}")
+                    return None
             
         except Exception as e:
             self.logger.error(f"detailIntro2 호출 실패 (content_id: {content_id}): {e}")
@@ -1871,6 +1886,11 @@ class UnifiedKTOClient:
                 )
             
             if response.success and response.data:
+                # 데이터 타입 확인
+                if not isinstance(response.data, dict):
+                    self.logger.warning(f"⚠️ detailInfo2 응답이 dict가 아님: {type(response.data)} - {response.data}")
+                    return None
+                
                 # 새로운 변환 파이프라인을 사용하여 데이터베이스에 저장
                 process_result = await self.transformation_pipeline.process_detailed_api_response(
                     api_name="detailInfo2",
@@ -1886,10 +1906,20 @@ class UnifiedKTOClient:
                     self.logger.warning(f"⚠️ detailInfo2 정보 처리 실패: {content_id} - {process_result.get('error')}")
                 
                 # 원본 데이터 반환 (하위 호환성)
-                items = response.data.get("items", {}).get("item", [])
-                if items and not isinstance(items, list):
-                    items = [items]
-                return items
+                try:
+                    items_data = response.data.get("items", {})
+                    # items가 빈 문자열인 경우 처리
+                    if items_data == "" or not items_data:
+                        self.logger.debug(f"detailInfo2 데이터 없음: {response.data}")
+                        return None
+                    
+                    items = items_data.get("item", [])
+                    if items and not isinstance(items, list):
+                        items = [items]
+                    return items
+                except (AttributeError, TypeError) as e:
+                    self.logger.warning(f"⚠️ detailInfo2 데이터 접근 실패: {e} - {response.data}")
+                    return None
             
         except Exception as e:
             self.logger.error(f"detailInfo2 호출 실패 (content_id: {content_id}): {e}")
@@ -1914,6 +1944,11 @@ class UnifiedKTOClient:
                 )
             
             if response.success and response.data:
+                # 데이터 타입 확인
+                if not isinstance(response.data, dict):
+                    self.logger.warning(f"⚠️ detailImage2 응답이 dict가 아님: {type(response.data)} - {response.data}")
+                    return None
+                
                 # 새로운 변환 파이프라인을 사용하여 데이터베이스에 저장
                 # detailImage2는 content_type_id가 없으므로 기본값 사용
                 process_result = await self.transformation_pipeline.process_detailed_api_response(
@@ -1930,10 +1965,20 @@ class UnifiedKTOClient:
                     self.logger.warning(f"⚠️ detailImage2 정보 처리 실패: {content_id} - {process_result.get('error')}")
                 
                 # 원본 데이터 반환 (하위 호환성)
-                items = response.data.get("items", {}).get("item", [])
-                if items and not isinstance(items, list):
-                    items = [items]
-                return items
+                try:
+                    items_data = response.data.get("items", {})
+                    # items가 빈 문자열인 경우 처리
+                    if items_data == "" or not items_data:
+                        self.logger.debug(f"detailImage2 데이터 없음: {response.data}")
+                        return None
+                    
+                    items = items_data.get("item", [])
+                    if items and not isinstance(items, list):
+                        items = [items]
+                    return items
+                except (AttributeError, TypeError) as e:
+                    self.logger.warning(f"⚠️ detailImage2 데이터 접근 실패: {e} - {response.data}")
+                    return None
             
         except Exception as e:
             self.logger.error(f"detailImage2 호출 실패 (content_id: {content_id}): {e}")

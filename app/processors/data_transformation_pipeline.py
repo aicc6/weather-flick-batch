@@ -78,6 +78,11 @@ class BaseDataTransformer(ABC):
     def _extract_items(self, raw_response: Dict) -> List[Dict]:
         """API 응답에서 아이템 목록 추출 (KTO/KMA 공통)"""
         try:
+            # 입력 데이터 타입 확인
+            if not isinstance(raw_response, dict):
+                self.logger.warning(f"raw_response가 dict가 아님: {type(raw_response)} - {raw_response}")
+                return []
+            
             # UnifiedAPIClient가 이미 body 부분만 반환하므로 직접 items에 접근
             # 기존 전체 응답 구조도 지원하기 위해 두 가지 경로 시도
             items = None
@@ -89,8 +94,13 @@ class BaseDataTransformer(ABC):
             elif "response" in raw_response:
                 items = raw_response.get("response", {}).get("body", {}).get("items", {})
             
-            if not items:
-                self.logger.debug(f"items가 없습니다. raw_response 키: {list(raw_response.keys())}")
+            if not items or items == "":
+                self.logger.debug(f"items가 없거나 비어있습니다. raw_response 키: {list(raw_response.keys())}")
+                return []
+
+            # items가 dict인지 확인 (빈 문자열 처리)
+            if not isinstance(items, dict):
+                self.logger.debug(f"items가 dict가 아님 (빈 데이터일 수 있음): {type(items)} - {items}")
                 return []
 
             item_list = items.get("item", [])
@@ -105,7 +115,7 @@ class BaseDataTransformer(ABC):
                 return []
 
         except Exception as e:
-            self.logger.error(f"아이템 추출 실패: {e}")
+            self.logger.error(f"아이템 추출 실패: {e} - raw_response type: {type(raw_response)}")
             return []
 
     def _clean_value(self, value: Any) -> Any:
@@ -1188,11 +1198,24 @@ class DataTransformationPipeline:
     async def _process_detail_intro(self, content_id: str, content_type_id: str, raw_response: Dict, raw_data_id: Optional[str]) -> Dict:
         """detailIntro2 API 응답 처리"""
         
-        items = self._extract_items(raw_response)
-        if not items:
-            return {'success': False, 'error': 'detailIntro2 응답에 데이터가 없습니다'}
+        try:
+            items = self._extract_items(raw_response)
+            if not items:
+                return {'success': False, 'error': 'detailIntro2 응답에 데이터가 없습니다'}
+            
+            if not isinstance(items, list) or len(items) == 0:
+                return {'success': False, 'error': 'detailIntro2 응답 형식이 올바르지 않습니다'}
+            
+            item = items[0]  # detailIntro2는 단일 아이템 반환
+            
+            # item이 dict가 아닌 경우 처리
+            if not isinstance(item, dict):
+                self.logger.warning(f"detailIntro2 응답 아이템이 dict가 아닙니다: {type(item)} - {item}")
+                return {'success': False, 'error': f'detailIntro2 응답 아이템 타입 오류: {type(item)}'}
         
-        item = items[0]  # detailIntro2는 단일 아이템 반환
+        except Exception as e:
+            self.logger.error(f"detailIntro2 응답 파싱 실패 ({content_id}): {e}")
+            return {'success': False, 'error': f'detailIntro2 응답 파싱 실패: {str(e)}'}
         
         # intro 정보를 JSONB로 저장
         intro_info = {}
@@ -1251,13 +1274,25 @@ class DataTransformationPipeline:
     async def _process_detail_info(self, content_id: str, content_type_id: str, raw_response: Dict, raw_data_id: Optional[str]) -> Dict:
         """detailInfo2 API 응답 처리"""
         
-        items = self._extract_items(raw_response)
-        if not items:
-            return {'success': False, 'error': 'detailInfo2 응답에 데이터가 없습니다'}
+        try:
+            items = self._extract_items(raw_response)
+            if not items:
+                return {'success': False, 'error': 'detailInfo2 응답에 데이터가 없습니다'}
+            
+            if not isinstance(items, list):
+                return {'success': False, 'error': 'detailInfo2 응답 형식이 올바르지 않습니다'}
+        
+        except Exception as e:
+            self.logger.error(f"detailInfo2 응답 파싱 실패 ({content_id}): {e}")
+            return {'success': False, 'error': f'detailInfo2 응답 파싱 실패: {str(e)}'}
         
         # content_detail_info 테이블에 저장할 데이터 준비
         detail_infos = []
         for item in items:
+            # item이 dict가 아닌 경우 건너뛰기
+            if not isinstance(item, dict):
+                self.logger.warning(f"detailInfo2 응답 아이템이 dict가 아닙니다: {type(item)} - {item}")
+                continue
             detail_data = {
                 'content_id': content_id,
                 'content_type_id': content_type_id,
@@ -1321,13 +1356,25 @@ class DataTransformationPipeline:
     async def _process_detail_images(self, content_id: str, content_type_id: str, raw_response: Dict, raw_data_id: Optional[str]) -> Dict:
         """detailImage2 API 응답 처리"""
         
-        items = self._extract_items(raw_response)
-        if not items:
-            return {'success': False, 'error': 'detailImage2 응답에 데이터가 없습니다'}
+        try:
+            items = self._extract_items(raw_response)
+            if not items:
+                return {'success': False, 'error': 'detailImage2 응답에 데이터가 없습니다'}
+            
+            if not isinstance(items, list):
+                return {'success': False, 'error': 'detailImage2 응답 형식이 올바르지 않습니다'}
+        
+        except Exception as e:
+            self.logger.error(f"detailImage2 응답 파싱 실패 ({content_id}): {e}")
+            return {'success': False, 'error': f'detailImage2 응답 파싱 실패: {str(e)}'}
         
         # content_images 테이블에 저장할 데이터 준비
         image_data = []
         for item in items:
+            # item이 dict가 아닌 경우 건너뛰기
+            if not isinstance(item, dict):
+                self.logger.warning(f"detailImage2 응답 아이템이 dict가 아닙니다: {type(item)} - {item}")
+                continue
             image_info = {
                 'content_id': content_id,
                 'content_type_id': content_type_id,
