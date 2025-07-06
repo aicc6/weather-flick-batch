@@ -1,0 +1,61 @@
+{
+  "monitoring": {
+    "check_interval": 30,
+    "api_key_usage_threshold": 0.8,
+    "api_key_critical_threshold": 0.95,
+    "db_connection_timeout": 10,
+    "db_pool_usage_threshold": 0.8,
+    "memory_warning_mb": 500,
+    "memory_critical_mb": 1000,
+    "cpu_warning_threshold": 70.0,
+    "cpu_critical_threshold": 90.0,
+    "disk_warning_threshold": 80.0,
+    "job_timeout_minutes": 60,
+    "job_failure_threshold": 3,
+    "enable_email_alerts": false,
+    "enable_slack_alerts": false,
+    "enable_log_alerts": true,
+    "alert_cooldown_minutes": 5,
+    "max_alerts_per_hour": 20
+  },
+  "notifications": {
+    "email": {
+      "enabled": false,
+      "config": {
+        "smtp_server": "smtp.gmail.com",
+        "smtp_port": 587,
+        "username": "your-email@gmail.com",
+        "password": "your-app-password",
+        "from_email": "weatherflick-monitoring@gmail.com",
+        "to_emails": ["admin@example.com", "ops@example.com"],
+        "use_tls": true
+      }
+    },
+    "slack": {
+      "enabled": false,
+      "config": {
+        "webhook_url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK",
+        "channel": "#alerts",
+        "username": "WeatherFlick-Monitoring",
+        "icon_emoji": ":warning:"
+      }
+    },
+    "webhook": {
+      "enabled": false,
+      "config": {
+        "url": "https://your-monitoring-service.com/webhooks/alerts",
+        "headers": {
+          "Authorization": "Bearer your-api-token",
+          "Content-Type": "application/json"
+        },
+        "timeout": 30
+      }
+    }
+  },
+  "batch_jobs": {
+    "job_history_limit": 1000,
+    "timeout_minutes": 60,
+    "failure_threshold": 3,
+    "success_rate_threshold": 0.9
+  }
+}
