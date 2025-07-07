@@ -521,7 +521,7 @@ class DatabaseManagerExtension:
             detail_intro_info, detail_additional_info,
             raw_data_id, last_sync_at, data_quality_score
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
         ON CONFLICT (content_id) DO UPDATE SET
             region_code = EXCLUDED.region_code,
@@ -558,7 +558,7 @@ class DatabaseManagerExtension:
             data.get("region_code"),
             data.get("restaurant_name"),
             data.get("address"),
-            data.get("addr2"),  # KTO API의 addr2 필드 사용
+            data.get("addr2") or data.get("address_detail"),  # KTO API의 addr2 필드 사용
             data.get("latitude"),
             data.get("longitude"),
             data.get("first_image"),      # 변환된 데이터에서 온 필드명
@@ -586,10 +586,14 @@ class DatabaseManagerExtension:
         )
 
         try:
+            self.logger.debug(f"음식점 UPSERT - 파라미터 개수: {len(params)}")
+            self.logger.debug(f"음식점 UPSERT - 쿼리: {query[:200]}...")
             self.db_manager.execute_update(query, params)
             return True
         except Exception as e:
             self.logger.error(f"음식점 데이터 UPSERT 실패: {e}")
+            self.logger.error(f"파라미터 개수: {len(params)}")
+            self.logger.error(f"파라미터 타입: {[type(p) for p in params]}")
             return False
 
     def get_api_call_statistics(self, api_provider: str) -> Dict:

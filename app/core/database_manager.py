@@ -148,16 +148,8 @@ class SyncDatabaseManager(BaseDatabaseManager):
     def execute_update(self, query: str, params: Optional[tuple] = None) -> int:
         """INSERT/UPDATE/DELETE 쿼리 실행하여 영향받은 행 수 반환"""
         try:
-            # params가 있으면 복잡한 객체들을 직렬화
-            if params:
-                processed_params = tuple(
-                    self.serialize_for_db(param) for param in params
-                )
-            else:
-                processed_params = params
-
             with self.get_cursor() as cursor:
-                cursor.execute(query, processed_params)
+                cursor.execute(query, params)
                 return cursor.rowcount
         except Exception as e:
             self.logger.error(f"UPDATE 쿼리 실행 실패: {e}")
@@ -166,16 +158,8 @@ class SyncDatabaseManager(BaseDatabaseManager):
     def execute_query(self, query: str, params: Optional[tuple] = None) -> Optional[Dict[str, Any]]:
         """RETURNING 절이 있는 쿼리 실행 (INSERT/UPDATE/DELETE with RETURNING)"""
         try:
-            # params가 있으면 복잡한 객체들을 직렬화
-            if params:
-                processed_params = tuple(
-                    self.serialize_for_db(param) for param in params
-                )
-            else:
-                processed_params = params
-
             with self.get_cursor() as cursor:
-                cursor.execute(query, processed_params)
+                cursor.execute(query, params)
                 # RETURNING 절이 있는 경우에만 fetchone 호출
                 if "RETURNING" in query.upper():
                     result = cursor.fetchone()

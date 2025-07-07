@@ -1524,7 +1524,15 @@ class UnifiedKTOClient:
 
             for item in processed_data:
                 # raw_data_id와 품질 점수 추가
-                item["raw_data_id"] = raw_data_id
+                self.logger.debug(f"원본 raw_data_id: {raw_data_id} (타입: {type(raw_data_id)})")
+                # raw_data_id가 유효한 UUID 형식인지 확인하고, 아니면 None으로 설정
+                try:
+                    import uuid
+                    uuid.UUID(str(raw_data_id))  # UUID 유효성 검사
+                    item["raw_data_id"] = raw_data_id
+                except (ValueError, TypeError, AttributeError):
+                    self.logger.warning(f"유효하지 않은 raw_data_id: {raw_data_id}, NULL로 설정")
+                    item["raw_data_id"] = None
                 item["data_quality_score"] = quality_score
                 item["last_sync_at"] = datetime.utcnow()
 
