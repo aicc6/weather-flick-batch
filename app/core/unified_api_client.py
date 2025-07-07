@@ -21,6 +21,9 @@ from urllib.parse import urlencode
 from app.core.database_manager_extension import get_extended_database_manager
 from app.core.multi_api_key_manager import get_api_key_manager, APIProvider
 from app.core.smart_cache_ttl_optimizer import get_smart_ttl_optimizer, get_optimal_cache_ttl, update_cache_access_stats
+from app.core.selective_storage_manager import get_storage_manager, StorageRequest
+from app.archiving.archival_engine import get_archival_engine
+from app.archiving.backup_manager import get_backup_manager
 
 
 @dataclass
@@ -70,6 +73,13 @@ class UnifiedAPIClient:
         
         # 스마트 TTL 최적화 매니저
         self.smart_ttl_optimizer = get_smart_ttl_optimizer()
+        
+        # 선택적 저장 매니저
+        self.storage_manager = get_storage_manager()
+        
+        # 아카이빙 시스템
+        self.archival_engine = get_archival_engine()
+        self.backup_manager = get_backup_manager()
 
         # 파일 매니저
         try:
@@ -467,26 +477,16 @@ class UnifiedAPIClient:
                         error_details=None
                     )
 
-            # 3. 원본 데이터 저장
+            # 3. 선택적 원본 데이터 저장
             raw_data_id = None
             if store_raw:
-                # API 키 정보 가져오기 (저장용)
-                api_key = "unknown"
-                if api_provider in [APIProvider.KTO, APIProvider.KMA]:
-                    api_key_info = self.key_manager.get_active_key(api_provider)
-                    if api_key_info:
-                        api_key = api_key_info.key
-                elif api_provider == APIProvider.WEATHER:
-                    api_key = os.getenv("WEATHER_API_KEY", "unknown")
-
-                raw_data_id = self._store_raw_data(
+                raw_data_id = await self._store_raw_data_selective(
                     api_provider,
-                    endpoint,
+                    endpoint, 
                     params,
                     response_data,
                     200,
-                    duration_ms,
-                    api_key,
+                    duration_ms
                 )
 
             # 4. 캐시 저장 (스마트 TTL 최적화 적용)
@@ -590,6 +590,189 @@ class UnifiedAPIClient:
         except Exception as e:
             self.logger.error(f"만료 데이터 정리 실패: {e}")
             return 0
+    
+    async def run_archival_process(self, api_provider: str = None, endpoint: str = None, 
+                                 dry_run: bool = False) -> Dict[str, Any]:
+        """
+        아카이빙 프로세스 실행
+        
+        Args:
+            api_provider: 특정 API 제공자만 아카이빙 (예: KTO, KMA)
+            endpoint: 특정 엔드포인트만 아카이빙
+            dry_run: 실제 실행 없이 분석만 수행
+        
+        Returns:
+            아카이빙 결과 요약
+        """
+        try:
+            summary = await self.archival_engine.run_archival_process(
+                api_provider=api_provider,
+                endpoint=endpoint,
+                dry_run=dry_run
+            )
+            
+            self.logger.info(f"아카이빙 프로세스 완료: "
+                           f"후보 {summary.total_candidates}개, "
+                           f"성공 {summary.successful_backups}개, "
+                           f"압축률 {summary.average_compression_ratio:.1f}%")
+            
+            return {
+                "success": True,
+                "summary": {
+                    "total_candidates": summary.total_candidates,
+                    "processed_items": summary.processed_items,
+                    "successful_backups": summary.successful_backups,
+                    "failed_backups": summary.failed_backups,
+                    "skipped_items": summary.skipped_items,
+                    "total_original_size_mb": summary.total_original_size_mb,
+                    "total_compressed_size_mb": summary.total_compressed_size_mb,
+                    "average_compression_ratio": summary.average_compression_ratio,
+                    "processing_time_seconds": summary.processing_time_seconds
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"아카이빙 프로세스 실패: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def restore_archived_data(self, data_id: str) -> Optional[Dict[str, Any]]:
+        """
+        아카이빙된 데이터 복원
+        
+        Args:
+            data_id: 복원할 데이터의 ID
+        
+        Returns:
+            복원된 데이터 또는 None
+        """
+        try:
+            restored_data = await self.archival_engine.restore_archived_data(data_id)
+            
+            if restored_data:
+                self.logger.info(f"아카이빙된 데이터 복원 완료: {data_id}")
+            else:
+                self.logger.warning(f"아카이빙된 데이터를 찾을 수 없음: {data_id}")
+            
+            return restored_data
+            
+        except Exception as e:
+            self.logger.error(f"아카이빙된 데이터 복원 실패: {data_id}, 오류: {e}")
+            return None
+    
+    def get_archival_statistics(self) -> Dict[str, Any]:
+        """
+        아카이빙 시스템 통계 반환
+        
+        Returns:
+            아카이빙 엔진 및 백업 관리자 통계
+        """
+        try:
+            archival_stats = self.archival_engine.get_archival_statistics()
+            backup_stats = self.backup_manager.get_backup_statistics()
+            
+            return {
+                "archival_engine": archival_stats,
+                "backup_manager": backup_stats,
+                "combined_summary": {
+                    "total_api_calls_archived": archival_stats["engine_statistics"]["total_items_processed"],
+                    "total_backups_created": backup_stats["total_backups"],
+                    "total_data_archived_mb": archival_stats["engine_statistics"]["total_data_archived_mb"],
+                    "average_compression_ratio": backup_stats["average_compression_ratio"],
+                    "last_archival_run": archival_stats["engine_statistics"]["last_run_time"]
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"아카이빙 통계 조회 실패: {e}")
+            return {"error": str(e)}
+    
+    async def _store_raw_data_selective(self, api_provider: APIProvider, endpoint: str,
+                                      params: Dict, response_data: Dict, status_code: int,
+                                      duration_ms: int) -> Optional[str]:
+        """
+        선택적 저장 시스템을 사용한 원본 데이터 저장
+        
+        Args:
+            api_provider: API 제공자
+            endpoint: API 엔드포인트
+            params: 요청 파라미터
+            response_data: 응답 데이터
+            status_code: HTTP 상태 코드
+            duration_ms: 실행 시간 (밀리초)
+        
+        Returns:
+            저장된 데이터의 ID (선택적 저장되지 않은 경우 None)
+        """
+        try:
+            # 응답 크기 계산
+            import json
+            response_json = json.dumps(response_data, ensure_ascii=False)
+            response_size_bytes = len(response_json.encode('utf-8'))
+            
+            # 요청 URL 생성
+            request_url = self._build_request_url(api_provider, endpoint, params)
+            
+            # 저장 요청 객체 생성
+            storage_request = StorageRequest(
+                provider=api_provider.value,
+                endpoint=endpoint,
+                request_url=request_url,
+                request_params=params,
+                response_data=response_data,
+                response_size_bytes=response_size_bytes,
+                status_code=status_code,
+                execution_time_ms=float(duration_ms),
+                created_at=datetime.now(),
+                request_id=f"{api_provider.value}_{endpoint}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                additional_metadata={
+                    "api_provider": api_provider.value,
+                    "endpoint": endpoint,
+                    "call_type": "unified_api_client"
+                }
+            )
+            
+            # 저장 여부 결정 및 실행
+            should_store, reason, storage_metadata = self.storage_manager.should_store_response(storage_request)
+            
+            if should_store:
+                success = self.storage_manager.store_api_response(storage_request, storage_metadata)
+                if success:
+                    # 저장된 데이터의 ID 생성 (단순화)
+                    raw_data_id = f"{api_provider.value}_{endpoint}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+                    self.logger.debug(f"선택적 저장 완료: {api_provider.value}/{endpoint} -> {raw_data_id}")
+                    return raw_data_id
+                else:
+                    self.logger.warning(f"선택적 저장 실패: {api_provider.value}/{endpoint}")
+                    return None
+            else:
+                self.logger.debug(f"선택적 저장 생략: {api_provider.value}/{endpoint} - {reason}")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"선택적 저장 중 오류: {e}")
+            return None
+    
+    def _build_request_url(self, api_provider: APIProvider, endpoint: str, params: Dict) -> str:
+        """요청 URL 빌드"""
+        try:
+            base_urls = {
+                APIProvider.KTO: "https://apis.data.go.kr/B551011/KorService1",
+                APIProvider.KMA: "https://apihub.kma.go.kr/api/typ01",
+                APIProvider.WEATHER: "https://api.openweathermap.org/data/2.5"
+            }
+            
+            base_url = base_urls.get(api_provider, "unknown://unknown")
+            
+            if params:
+                from urllib.parse import urlencode
+                query_string = urlencode(params)
+                return f"{base_url}/{endpoint}?{query_string}"
+            else:
+                return f"{base_url}/{endpoint}"
+                
+        except Exception as e:
+            self.logger.error(f"URL 빌드 실패: {e}")
+            return f"{api_provider.value}://{endpoint}"
 
 
 # 싱글톤 인스턴스

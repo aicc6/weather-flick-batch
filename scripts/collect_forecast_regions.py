@@ -28,6 +28,7 @@ from config.settings import get_app_settings, get_api_config
 from app.core.database_manager import DatabaseManager
 from app.core.database_manager_extension import extend_database_manager
 from app.core.multi_api_key_manager import MultiAPIKeyManager, APIProvider
+from app.core.selective_storage_manager import get_storage_manager, StorageRequest
 
 # 로깅 설정
 logging.basicConfig(
@@ -45,6 +46,7 @@ class ForecastRegionCollector:
         self.api_config = get_api_config()
         self.db_manager = extend_database_manager(DatabaseManager().sync_manager)
         self.api_key_manager = MultiAPIKeyManager()
+        self.storage_manager = get_storage_manager()
         self.session: Optional[aiohttp.ClientSession] = None
         
         # 기상청 예보구역 API 설정
@@ -188,6 +190,16 @@ class ForecastRegionCollector:
                 logger.debug(f"응답 상태: {response.status}")
                 logger.debug(f"응답 헤더: {dict(response.headers)}")
                 logger.debug(f"응답 내용 (처음 200자): {response_text[:200]}")
+                
+                # API 원본 응답 저장 시스템 추가
+                await self._store_raw_api_response(
+                    region_code=region_code,
+                    request_url=str(response.url),
+                    request_params=params,
+                    response_text=response_text,
+                    status_code=response.status,
+                    response_headers=dict(response.headers)
+                )
                 
                 if response.status == 200:
                     # 빈 응답 체크
@@ -407,6 +419,81 @@ class ForecastRegionCollector:
             logger.error(f"예보구역 UPSERT 실패: {e}")
             logger.error(f"데이터: {region_data}")
             return False
+    
+    async def _store_raw_api_response(self, region_code: str, request_url: str, 
+                                    request_params: Dict[str, Any], response_text: str,
+                                    status_code: int, response_headers: Dict[str, str]):
+        """
+        기상청 예보구역 API 원본 응답을 선택적 저장 시스템에 저장
+        
+        Args:
+            region_code: 예보구역 코드
+            request_url: 요청 URL
+            request_params: 요청 파라미터
+            response_text: 응답 텍스트
+            status_code: HTTP 상태 코드
+            response_headers: 응답 헤더
+        """
+        try:
+            # 응답 데이터 파싱 (JSON 또는 XML)
+            response_data = {}
+            content_type = response_headers.get('content-type', '')
+            
+            if 'application/json' in content_type:
+                try:
+                    response_data = json.loads(response_text)
+                except json.JSONDecodeError:
+                    response_data = {"raw_text": response_text}
+            else:
+                # XML 또는 기타 형식
+                response_data = {"raw_text": response_text, "content_type": content_type}
+            
+            # 응답 크기 계산
+            response_size_bytes = len(response_text.encode('utf-8'))
+            
+            # 저장 요청 객체 생성
+            storage_request = StorageRequest(
+                provider="KMA",
+                endpoint="fct_shrt_reg",
+                request_url=request_url,
+                request_params=request_params,
+                response_data=response_data,
+                response_size_bytes=response_size_bytes,
+                status_code=status_code,
+                execution_time_ms=0.0,  # 비동기 환경에서는 측정하지 않음
+                created_at=datetime.now(),
+                request_id=f"forecast_region_{region_code}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                additional_metadata={
+                    "region_code": region_code,
+                    "api_type": "forecast_region",
+                    "content_type": content_type,
+                    "response_headers": response_headers
+                }
+            )
+            
+            # 저장 여부 결정 및 실행
+            should_store, reason, storage_metadata = self.storage_manager.should_store_response(storage_request)
+            
+            if should_store:
+                success = self.storage_manager.store_api_response(storage_request, storage_metadata)
+                if success:
+                    logger.debug(f"예보구역 {region_code} 원본 응답 저장 완료")
+                else:
+                    logger.warning(f"예보구역 {region_code} 원본 응답 저장 실패")
+            else:
+                logger.debug(f"예보구역 {region_code} 원본 응답 저장 생략: {reason}")
+                
+        except Exception as e:
+            logger.error(f"예보구역 {region_code} 원본 응답 저장 중 오류: {e}")
+    
+    def get_storage_statistics(self) -> Dict[str, Any]:
+        """
+        저장 시스템 통계 반환
+        
+        Returns:
+            저장 시스템 성능 및 사용량 통계
+        """
+        return self.storage_manager.get_statistics()
 
 
 async def main():
@@ -434,7 +521,14 @@ async def main():
             
             if regions:
                 saved_count = await collector.save_forecast_regions(regions)
+                
+                # 저장 시스템 통계 출력
+                storage_stats = collector.get_storage_statistics()
                 logger.info(f"예보구역 수집 완료: {saved_count}개 저장")
+                logger.info(f"원본 응답 저장 통계: "
+                          f"요청 {storage_stats.get('total_requests', 0)}개, "
+                          f"저장 {storage_stats.get('storage_executions', 0)}개, "
+                          f"성공률 {storage_stats.get('storage_success_rate', 0):.1f}%")
             else:
                 logger.warning("수집된 예보구역 데이터가 없습니다")
                 

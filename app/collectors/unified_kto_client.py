@@ -20,6 +20,9 @@ from app.core.concurrent_api_manager import (
     APICallPriority, 
     ConcurrencyConfig
 )
+from app.core.selective_storage_manager import get_storage_manager, StorageRequest
+from app.archiving.archival_engine import get_archival_engine
+from app.archiving.backup_manager import get_backup_manager
 
 
 class UnifiedKTOClient:
@@ -31,6 +34,11 @@ class UnifiedKTOClient:
         self.transformation_pipeline = get_transformation_pipeline()
         self.db_manager = get_extended_database_manager()
         self.key_manager = get_api_key_manager()
+        self.storage_manager = get_storage_manager()
+        
+        # 아카이빙 시스템
+        self.archival_engine = get_archival_engine()
+        self.backup_manager = get_backup_manager()
         
         # 병렬 처리 설정
         self.enable_parallel = enable_parallel

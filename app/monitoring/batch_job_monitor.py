@@ -466,3 +466,38 @@ class BatchJobMonitor:
             ],
             'consecutive_failures': dict(self.consecutive_failures)
         }
+    
+    def register_job(self, job_name: str, description: str = "") -> str:
+        """작업 등록 (간단한 인터페이스)"""
+        return self.start_job(job_name, JobType.TESTING, {"description": description})
+    
+    def start_job_by_id(self, job_id: str):
+        """작업 시작 (기존 ID 사용)"""
+        if job_id in self.active_jobs:
+            self.active_jobs[job_id].status = JobStatus.RUNNING
+            self.logger.info(f"작업 시작: {job_id}")
+    
+    def complete_job_simple(self, job_id: str, metadata: Dict[str, Any] = None):
+        """작업 완료 (간단한 인터페이스)"""
+        self.complete_job(job_id, JobStatus.SUCCESS, None, metadata)
+    
+    def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """작업 상태 조회"""
+        job = self.get_job_by_id(job_id)
+        if job:
+            return {
+                "job_id": job.job_id,
+                "job_name": job.job_name,
+                "status": job.status.value,
+                "start_time": job.start_time.isoformat(),
+                "end_time": job.end_time.isoformat() if job.end_time else None,
+                "duration": job.duration,
+                "processed_records": job.processed_records,
+                "success_rate": job.success_rate
+            }
+        return None
+    
+    def get_job_statistics(self) -> Dict[str, Any]:
+        """작업 통계"""
+        stats = self.get_job_stats()
+        return asdict(stats)

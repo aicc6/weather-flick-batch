@@ -86,5 +86,21 @@ dump.rdb
 htmlcov/
 test_results/
 
+# Analysis and reports (temporary files)
+*analysis*.json
+*analysis*.sql
+*report*.json
+*report*.txt
+*report*.md
+FINAL_*.md
+MONITORING_*.md
+region_analysis_*.json
+api_raw_data_*.json
+api_raw_data_*.sql
+temp_analysis/
+
+# Test files (one-time analysis)
+test_*.py
+
 # Documentation builds
 docs/_build/

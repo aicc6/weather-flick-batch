@@ -385,20 +385,16 @@ class AdvancedCacheManager:
     async def get_cache_metrics(self) -> CacheMetrics:
         """캐시 성능 메트릭 조회"""
         try:
-            # Redis 정보 수집
-            info = await self.redis_client.client.info()
+            # 동기 Redis 클라이언트를 통한 정보 수집
+            info = self.redis_client.get_info()
             
-            # 메모리 사용량
-            used_memory = info.get('used_memory', 0)
-            max_memory = info.get('maxmemory', 0)
-            
-            # 메트릭 업데이트
-            self._metrics.cache_size_mb = used_memory / 1024 / 1024
-            if max_memory > 0:
-                self._metrics.memory_usage_percent = (used_memory / max_memory) * 100
-            
-            self._metrics.evictions = info.get('evicted_keys', 0)
-            self._metrics.expired_keys = info.get('expired_keys', 0)
+            if info:
+                # 메모리 사용량 계산 (간단한 방식)
+                used_memory_human = info.get('used_memory_human', '0B')
+                
+                # 메트릭 업데이트
+                self._metrics.evictions = info.get('evicted_keys', 0)
+                self._metrics.expired_keys = info.get('expired_keys', 0)
             
             return self._metrics
             
@@ -417,14 +413,228 @@ class AdvancedCacheManager:
         self._last_metrics_reset = datetime.now()
         self.logger.info("캐시 성능 메트릭이 초기화되었습니다")
     
+    async def set(self, key: str, value: Any, ttl: int = 3600) -> bool:
+        """
+        캐시에 데이터 저장 (기본 set 메서드)
+        
+        Args:
+            key: 캐시 키
+            value: 저장할 데이터
+            ttl: 만료 시간 (초)
+            
+        Returns:
+            bool: 저장 성공 여부
+        """
+        start_time = time.time()
+        
+        try:
+            # 동기 Redis 클라이언트 사용
+            result = self.redis_client.set_cache(key, value, ttl)
+            
+            # 의존성 기반 무효화 트리거 (비동기 처리)
+            if self.invalidation_config.enabled:
+                asyncio.create_task(self.invalidate_by_dependency(key))
+            
+            if result:
+                self.logger.debug(f"캐시 저장 성공: {key} (TTL: {ttl}초)")
+            else:
+                self.logger.warning(f"캐시 저장 실패: {key}")
+            
+            return result
+                
+        except Exception as e:
+            self.logger.error(f"캐시 저장 실패 [{key}]: {e}")
+            return False
+        finally:
+            # 성능 메트릭 업데이트
+            response_time = (time.time() - start_time) * 1000
+            self._update_metrics(response_time)
+    
+    async def get(self, key: str, default: Any = None) -> Any:
+        """
+        캐시에서 데이터 조회 (기본 get 메서드)
+        
+        Args:
+            key: 캐시 키
+            default: 키가 없을 때 반환할 기본값
+            
+        Returns:
+            Any: 캐시된 데이터 또는 기본값
+        """
+        start_time = time.time()
+        
+        try:
+            # 동기 Redis 클라이언트 사용
+            cached_data = self.redis_client.get_cache(key)
+            
+            if cached_data is not None:
+                # 히트 카운트 증가
+                self._metrics.hit_count += 1
+                self.logger.debug(f"캐시 조회 성공: {key}")
+                return cached_data
+            else:
+                # 미스 카운트 증가
+                self._metrics.miss_count += 1
+                self.logger.debug(f"캐시 미스: {key}")
+                return default
+                
+        except Exception as e:
+            self.logger.error(f"캐시 조회 실패 [{key}]: {e}")
+            self._metrics.miss_count += 1
+            return default
+        finally:
+            # 성능 메트릭 업데이트
+            response_time = (time.time() - start_time) * 1000
+            self._update_metrics(response_time)
+    
+    async def delete(self, key: str) -> bool:
+        """
+        캐시에서 특정 키 삭제
+        
+        Args:
+            key: 삭제할 캐시 키
+            
+        Returns:
+            bool: 삭제 성공 여부
+        """
+        try:
+            # 동기 Redis 클라이언트 사용
+            result = self.redis_client.delete_cache(key)
+            
+            if result:
+                self.logger.debug(f"캐시 삭제 성공: {key}")
+                
+                # 의존성 기반 무효화 트리거 (비동기 처리)
+                if self.invalidation_config.enabled:
+                    asyncio.create_task(self.invalidate_by_dependency(key))
+                
+                return True
+            else:
+                self.logger.debug(f"캐시 키가 존재하지 않음: {key}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"캐시 삭제 실패 [{key}]: {e}")
+            return False
+    
+    async def exists(self, key: str) -> bool:
+        """
+        캐시 키 존재 여부 확인
+        
+        Args:
+            key: 확인할 캐시 키
+            
+        Returns:
+            bool: 키 존재 여부
+        """
+        try:
+            # 동기 Redis 클라이언트 사용
+            result = self.redis_client.exists(key)
+            return result
+        except Exception as e:
+            self.logger.error(f"캐시 키 존재 확인 실패 [{key}]: {e}")
+            return False
+    
+    async def expire(self, key: str, ttl: int) -> bool:
+        """
+        캐시 키의 만료 시간 설정
+        
+        Args:
+            key: 캐시 키
+            ttl: 만료 시간 (초)
+            
+        Returns:
+            bool: 설정 성공 여부
+        """
+        try:
+            # 동기 Redis 클라이언트를 통해 직접 접근
+            client = self.redis_client.get_client()
+            if not client:
+                self.logger.warning(f"Redis 클라이언트 없음, 만료 시간 설정 실패: {key}")
+                return False
+                
+            result = client.expire(key, ttl)
+            
+            if result:
+                self.logger.debug(f"캐시 만료 시간 설정: {key} (TTL: {ttl}초)")
+                return True
+            else:
+                self.logger.warning(f"캐시 키가 존재하지 않아 만료 시간 설정 실패: {key}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"캐시 만료 시간 설정 실패 [{key}]: {e}")
+            return False
+    
+    async def get_ttl(self, key: str) -> int:
+        """
+        캐시 키의 남은 만료 시간 조회
+        
+        Args:
+            key: 캐시 키
+            
+        Returns:
+            int: 남은 만료 시간 (초), -1: 만료 시간 없음, -2: 키 없음
+        """
+        try:
+            # 동기 Redis 클라이언트를 통해 직접 접근
+            client = self.redis_client.get_client()
+            if not client:
+                self.logger.warning(f"Redis 클라이언트 없음, TTL 조회 실패: {key}")
+                return -2
+                
+            result = client.ttl(key)
+            return result
+        except Exception as e:
+            self.logger.error(f"캐시 TTL 조회 실패 [{key}]: {e}")
+            return -2
+    
+    async def set_cache(self, key: str, data: Any, ttl: int = 3600) -> bool:
+        """
+        캐시 설정 (기존 호환성을 위한 메서드)
+        
+        Args:
+            key: 캐시 키
+            data: 저장할 데이터
+            ttl: 만료 시간 (초)
+            
+        Returns:
+            bool: 저장 성공 여부
+        """
+        return await self.set(key, data, ttl)
+    
+    async def get_cache(self, key: str, default: Any = None) -> Any:
+        """
+        캐시 조회 (기존 호환성을 위한 메서드)
+        
+        Args:
+            key: 캐시 키
+            default: 기본값
+            
+        Returns:
+            Any: 캐시된 데이터 또는 기본값
+        """
+        return await self.get(key, default)
+
     async def get_cache_health(self) -> Dict[str, Any]:
         """캐시 시스템 건강 상태 조회"""
         try:
             metrics = await self.get_cache_metrics()
-            info = await self.redis_client.client.info()
+            info = self.redis_client.get_info()
+            
+            # Redis 클라이언트 상태 확인
+            client = self.redis_client.get_client()
+            is_healthy = False
+            
+            if client:
+                try:
+                    client.ping()
+                    is_healthy = True
+                except:
+                    is_healthy = False
             
             return {
-                "status": "healthy" if await self.redis_client.ping() else "unhealthy",
+                "status": "healthy" if is_healthy else "unhealthy",
                 "hit_rate": metrics.hit_rate,
                 "memory_usage_percent": metrics.memory_usage_percent,
                 "connected_clients": info.get('connected_clients', 0),
@@ -432,7 +642,8 @@ class AdvancedCacheManager:
                 "keyspace_hits": info.get('keyspace_hits', 0),
                 "keyspace_misses": info.get('keyspace_misses', 0),
                 "evicted_keys": info.get('evicted_keys', 0),
-                "last_metrics_reset": self._last_metrics_reset.isoformat()
+                "last_metrics_reset": self._last_metrics_reset.isoformat(),
+                "redis_version": info.get('redis_version', 'unknown')
             }
             
         except Exception as e:

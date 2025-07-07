@@ -8,7 +8,7 @@ import os
 import time
 import json
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -558,6 +558,96 @@ class MultiAPIKeyManager:
                 return True
         
         return False
+    
+    def get_available_keys(self, provider: APIProvider) -> List[APIKeyInfo]:
+        """
+        사용 가능한 API 키 목록 반환
+        
+        Args:
+            provider: API 제공자
+            
+        Returns:
+            List[APIKeyInfo]: 사용 가능한 키 목록
+        """
+        if provider not in self.api_keys:
+            return []
+        
+        available_keys = []
+        
+        for key_info in self.api_keys[provider]:
+            # 사용 불가능한 이유가 없는 키만 반환
+            if self._get_key_unavailable_reason(key_info) is None:
+                available_keys.append(key_info)
+        
+        return available_keys
+    
+    def get_all_available_keys(self) -> Dict[APIProvider, List[APIKeyInfo]]:
+        """
+        모든 제공자의 사용 가능한 API 키 목록 반환
+        
+        Returns:
+            Dict[APIProvider, List[APIKeyInfo]]: 제공자별 사용 가능한 키 목록
+        """
+        available_keys = {}
+        
+        for provider in self.api_keys.keys():
+            available_keys[provider] = self.get_available_keys(provider)
+        
+        return available_keys
+    
+    def get_key_availability_summary(self) -> Dict[str, Any]:
+        """
+        API 키 가용성 요약 정보 반환
+        
+        Returns:
+            Dict[str, Any]: 가용성 요약 정보
+        """
+        summary = {
+            "timestamp": datetime.now().isoformat(),
+            "providers": {},
+            "total_summary": {
+                "total_keys": 0,
+                "active_keys": 0,
+                "available_keys": 0,
+                "exhausted_keys": 0,
+                "error_keys": 0
+            }
+        }
+        
+        for provider, keys in self.api_keys.items():
+            available_keys = self.get_available_keys(provider)
+            active_keys = [k for k in keys if k.is_active]
+            exhausted_keys = [k for k in keys if k.current_usage >= k.daily_limit]
+            error_keys = [k for k in keys if k.error_count >= 5]
+            
+            provider_summary = {
+                "total_keys": len(keys),
+                "active_keys": len(active_keys),
+                "available_keys": len(available_keys),
+                "exhausted_keys": len(exhausted_keys),
+                "error_keys": len(error_keys),
+                "availability_rate": (len(available_keys) / len(keys) * 100) if keys else 0
+            }
+            
+            summary["providers"][provider.value] = provider_summary
+            
+            # 전체 요약에 추가
+            summary["total_summary"]["total_keys"] += provider_summary["total_keys"]
+            summary["total_summary"]["active_keys"] += provider_summary["active_keys"]
+            summary["total_summary"]["available_keys"] += provider_summary["available_keys"]
+            summary["total_summary"]["exhausted_keys"] += provider_summary["exhausted_keys"]
+            summary["total_summary"]["error_keys"] += provider_summary["error_keys"]
+        
+        # 전체 가용성 비율 계산
+        total_keys = summary["total_summary"]["total_keys"]
+        if total_keys > 0:
+            summary["total_summary"]["availability_rate"] = (
+                summary["total_summary"]["available_keys"] / total_keys * 100
+            )
+        else:
+            summary["total_summary"]["availability_rate"] = 0
+        
+        return summary
 
     def _load_cache(self):
         """캐시에서 사용량 정보 로드"""
