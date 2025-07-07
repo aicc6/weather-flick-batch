@@ -22,6 +22,7 @@ import argparse
 import asyncio
 import time
 import tracemalloc
+import uuid
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
@@ -166,7 +167,8 @@ class BatchPerformanceTester:
                 retry_attempts=1  # 테스트용으로 재시도 최소화
             )
             
-            raw_data_id = f"test_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(1000, 9999)}"
+            # 정상적인 UUID 생성 (테스트용)
+            raw_data_id = str(uuid.uuid4())
             
             if table_type == "current":
                 result = await optimize_weather_current_insert(test_data, raw_data_id, config)
