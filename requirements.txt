@@ -38,6 +38,13 @@ pytest-cov>=4.1.0
 pytest-mock>=3.11.0
 pytest-asyncio>=0.21.1
 
+# FastAPI (API 서버용)
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+httpx>=0.25.0
+
 # 개발 도구 (개발용)
 black>=23.0.0
 flake8>=6.0.0

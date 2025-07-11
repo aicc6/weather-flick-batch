@@ -28,12 +28,12 @@ RUN mkdir -p /app/logs /app/data/raw /app/data/processed /app/data/sample
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# 포트 노출 (모니터링용)
-EXPOSE 8080
+# 포트 노출 (모니터링용 및 API 서버용)
+EXPOSE 9090
 
-# 헬스체크
+# 헬스체크 (API 서버 헬스체크)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import sys; sys.exit(0)"
+    CMD curl -f http://localhost:9090/health || exit 1
 
-# 실행 명령
-CMD ["python", "weather_flick_batch/main.py"]
+# 실행 명령 (API 서버 포함)
+CMD ["python", "minimal_api.py"]
