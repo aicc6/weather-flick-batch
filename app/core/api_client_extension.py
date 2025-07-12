@@ -55,7 +55,6 @@ class APIClientStorageExtension:
     
     def capture_api_call(self,
                         endpoint: str,
-                        request_url: str,
                         request_params: Dict[str, Any],
                         response_data: Union[Dict, str, bytes],
                         status_code: int,
@@ -69,7 +68,6 @@ class APIClientStorageExtension:
         
         Args:
             endpoint: API 엔드포인트
-            request_url: 요청 URL
             request_params: 요청 파라미터
             response_data: 응답 데이터
             status_code: HTTP 상태 코드
@@ -93,7 +91,6 @@ class APIClientStorageExtension:
             storage_request = StorageRequest(
                 provider=self.provider_name,
                 endpoint=endpoint,
-                request_url=request_url,
                 request_params=request_params,
                 response_data=normalized_response,
                 response_size_bytes=response_size,
@@ -349,7 +346,6 @@ class StorageEnabledAPIClient:
             # 저장 처리
             storage_result = self.storage_extension.capture_api_call(
                 endpoint=endpoint,
-                request_url=kwargs.get('url', f'{self.provider_name}/{endpoint}'),
                 request_params=request_params or kwargs,
                 response_data=response_data,
                 status_code=status_code,
@@ -367,7 +363,6 @@ class StorageEnabledAPIClient:
             
             storage_result = self.storage_extension.capture_api_call(
                 endpoint=endpoint,
-                request_url=kwargs.get('url', f'{self.provider_name}/{endpoint}'),
                 request_params=request_params or kwargs,
                 response_data={"error": str(e)},
                 status_code=500,
@@ -417,7 +412,6 @@ def wrap_existing_api_function(provider_name: str,
             
             storage_result = storage_extension.capture_api_call(
                 endpoint=endpoint,
-                request_url=kwargs.get('url', f'{provider_name}/{endpoint}'),
                 request_params=kwargs,
                 response_data=result,
                 status_code=200,
@@ -432,7 +426,6 @@ def wrap_existing_api_function(provider_name: str,
             
             storage_extension.capture_api_call(
                 endpoint=endpoint,
-                request_url=kwargs.get('url', f'{provider_name}/{endpoint}'),
                 request_params=kwargs,
                 response_data={"error": str(e)},
                 status_code=500,

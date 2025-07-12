@@ -22,7 +22,6 @@ class StorageRequest:
     """저장 요청 데이터 구조"""
     provider: str
     endpoint: str
-    request_url: str
     request_params: Dict[str, Any]
     response_data: Dict[str, Any]
     response_size_bytes: int
@@ -102,7 +101,7 @@ class SelectiveStorageManager:
             return False, f"결정 오류: {str(e)}", {}
     
     def store_api_response(self, storage_request: StorageRequest, 
-                          storage_metadata: Dict[str, Any]) -> bool:
+                          storage_metadata: Dict[str, Any]) -> Optional[str]:
         """
         API 응답 데이터를 데이터베이스에 저장
         
@@ -111,7 +110,7 @@ class SelectiveStorageManager:
             storage_metadata: 저장 메타데이터
         
         Returns:
-            저장 성공 여부
+            저장된 데이터의 UUID (실패 시 None)
         """
         start_time = time.time()
         
@@ -129,14 +128,12 @@ class SelectiveStorageManager:
             insert_data = {
                 "api_provider": storage_request.provider,
                 "endpoint": storage_request.endpoint,
-                "request_url": storage_request.request_url,
                 "request_params": json.dumps(storage_request.request_params, default=json_serial),
                 "raw_response": json.dumps(storage_request.response_data, default=json_serial),
                 "response_status": storage_request.status_code,
                 "response_size": storage_request.response_size_bytes,
                 "execution_time_ms": storage_request.execution_time_ms,
-                "created_at": storage_request.created_at,
-                "storage_metadata": json.dumps(storage_metadata, default=json_serial)
+                "created_at": storage_request.created_at
             }
             
             # 추가 메타데이터 병합
@@ -148,32 +145,38 @@ class SelectiveStorageManager:
             # 데이터베이스에 저장
             insert_query = """
             INSERT INTO api_raw_data (
-                api_provider, endpoint, request_url, request_params, 
+                api_provider, endpoint, request_method, request_params, 
                 raw_response, response_status, response_size, 
-                execution_time_ms, created_at, storage_metadata
+                request_duration, created_at
             ) VALUES (
-                %(api_provider)s, %(endpoint)s, %(request_url)s, %(request_params)s,
+                %(api_provider)s, %(endpoint)s, 'GET', %(request_params)s,
                 %(raw_response)s, %(response_status)s, %(response_size)s,
-                %(execution_time_ms)s, %(created_at)s, %(storage_metadata)s
-            )
+                %(execution_time_ms)s, %(created_at)s
+            ) RETURNING id
             """
             
-            self.db_manager.execute_query(insert_query, insert_data)
+            result = self.db_manager.execute_query(insert_query, insert_data)
             
-            # 성능 통계 업데이트
-            storage_time = (time.time() - start_time) * 1000
-            self.stats["storage_executions"] += 1
-            self.stats["storage_time_ms"] += storage_time
-            
-            logger.debug(f"API 응답 저장 완료: {storage_request.provider}/{storage_request.endpoint} "
-                        f"({storage_time:.2f}ms)")
-            
-            return True
+            # 결과에서 UUID 추출
+            if result and len(result) > 0:
+                saved_uuid = str(result[0]['id'])
+                
+                # 성능 통계 업데이트
+                storage_time = (time.time() - start_time) * 1000
+                self.stats["storage_executions"] += 1
+                self.stats["storage_time_ms"] += storage_time
+                
+                logger.debug(f"API 응답 저장 완료: {storage_request.provider}/{storage_request.endpoint} "
+                            f"(UUID: {saved_uuid}, {storage_time:.2f}ms)")
+                
+                return saved_uuid
+            else:
+                raise Exception("UUID를 반환받지 못했습니다")
             
         except Exception as e:
             self.stats["storage_failures"] += 1
             logger.error(f"API 응답 저장 실패: {e}")
-            return False
+            return None
     
     def process_storage_request(self, storage_request: StorageRequest) -> Dict[str, Any]:
         """
@@ -194,16 +197,18 @@ class SelectiveStorageManager:
             "should_store": should_store,
             "decision_reason": reason,
             "storage_success": False,
+            "stored_uuid": None,
             "process_time_ms": 0,
             "storage_metadata": storage_metadata
         }
         
         # 2. 저장 실행 (필요한 경우)
         if should_store:
-            storage_success = self.store_api_response(storage_request, storage_metadata)
-            result["storage_success"] = storage_success
+            stored_uuid = self.store_api_response(storage_request, storage_metadata)
+            result["storage_success"] = stored_uuid is not None
+            result["stored_uuid"] = stored_uuid
             
-            if not storage_success:
+            if not stored_uuid:
                 logger.warning(f"저장 실패하였으나 정책상 저장 대상: "
                              f"{storage_request.provider}/{storage_request.endpoint}")
         

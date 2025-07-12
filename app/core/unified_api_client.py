@@ -709,14 +709,10 @@ class UnifiedAPIClient:
             response_json = json.dumps(response_data, ensure_ascii=False)
             response_size_bytes = len(response_json.encode('utf-8'))
             
-            # 요청 URL 생성
-            request_url = self._build_request_url(api_provider, endpoint, params)
-            
             # 저장 요청 객체 생성
             storage_request = StorageRequest(
                 provider=api_provider.value,
                 endpoint=endpoint,
-                request_url=request_url,
                 request_params=params,
                 response_data=response_data,
                 response_size_bytes=response_size_bytes,
@@ -735,12 +731,10 @@ class UnifiedAPIClient:
             should_store, reason, storage_metadata = self.storage_manager.should_store_response(storage_request)
             
             if should_store:
-                success = self.storage_manager.store_api_response(storage_request, storage_metadata)
-                if success:
-                    # 저장된 데이터의 ID 생성 (단순화)
-                    raw_data_id = f"{api_provider.value}_{endpoint}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
-                    self.logger.debug(f"선택적 저장 완료: {api_provider.value}/{endpoint} -> {raw_data_id}")
-                    return raw_data_id
+                stored_uuid = self.storage_manager.store_api_response(storage_request, storage_metadata)
+                if stored_uuid:
+                    self.logger.debug(f"선택적 저장 완료: {api_provider.value}/{endpoint} -> UUID: {stored_uuid}")
+                    return stored_uuid
                 else:
                     self.logger.warning(f"선택적 저장 실패: {api_provider.value}/{endpoint}")
                     return None

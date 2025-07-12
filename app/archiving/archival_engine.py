@@ -145,11 +145,10 @@ class ArchivalEngine:
                 api_provider,
                 endpoint,
                 created_at,
-                last_accessed_at,
-                data_size_bytes,
-                request_url,
-                response_status_code,
-                response_data
+                created_at as last_accessed_at,
+                response_size as data_size_bytes,
+                response_status as response_status_code,
+                raw_response as response_data
             FROM api_raw_data
             WHERE 1=1
         """
