@@ -36,4 +36,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:9090/health || exit 1
 
 # 실행 명령 (API 서버 포함)
-CMD ["python", "minimal_api.py"]
+CMD ["python", "main_with_api.py"]
