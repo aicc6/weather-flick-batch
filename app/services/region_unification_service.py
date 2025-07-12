@@ -696,3 +696,14 @@ if __name__ == "__main__":
     print("\n4. 지역 정보 통계")
     stats = service.get_region_statistics()
     print(f"통계: {stats}")
+
+# 새로운 RegionServiceCompatible을 사용하도록 변경
+def get_region_unification_service():
+    """RegionUnificationService 대신 RegionServiceCompatible 반환
+    
+    기존 코드와의 호환성을 위해 함수명은 유지하되,
+    실제로는 RegionServiceCompatible을 반환합니다.
+    """
+    from .region_service_compatible import get_region_service_compatible
+    return get_region_service_compatible()
+

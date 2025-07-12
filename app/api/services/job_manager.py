@@ -213,11 +213,38 @@ class JobManager:
             job.progress = 50.0
             
             # 실제 수집 로직
-            result = await asyncio.to_thread(collector.collect_all_weather_data)
+            # 모든 지역에 대해 날씨 데이터 수집
+            from config.constants import WEATHER_COORDINATES
+            
+            collected_data = []
+            total_regions = len(WEATHER_COORDINATES)
+            
+            for idx, region_name in enumerate(WEATHER_COORDINATES.keys()):
+                try:
+                    # 현재 날씨 수집
+                    current_weather = await asyncio.to_thread(
+                        collector.get_current_weather, region_name
+                    )
+                    if current_weather:
+                        collected_data.append(current_weather)
+                    
+                    # 진행률 업데이트
+                    job.progress = 20 + (60 * (idx + 1) / total_regions)
+                    
+                    # API 호출 제한 방지
+                    await asyncio.sleep(0.1)
+                    
+                except Exception as e:
+                    await self._add_log(
+                        job_id, 
+                        LogLevel.WARNING, 
+                        f"{region_name} 날씨 수집 실패: {str(e)}"
+                    )
             
             job.result_summary = {
-                "collected_cities": result.get("cities", 0),
-                "total_records": result.get("records", 0)
+                "collected_cities": len(collected_data),
+                "total_records": len(collected_data),
+                "total_regions": total_regions
             }
             
             await self._add_log(job_id, LogLevel.INFO, "날씨 데이터 수집 완료", job.result_summary)

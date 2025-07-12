@@ -26,13 +26,15 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS 설정 - admin-back에서 호출 가능하도록
+# CORS 설정 - 모든 오리진 허용
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 # 라우터 등록
