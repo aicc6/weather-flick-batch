@@ -22,10 +22,7 @@ from app.api.main import app
 from app.api.config import settings
 
 # 배치 시스템 임포트
-from app.core.monitoring_config import get_monitoring_config
 from app.monitoring.monitoring_system import MonitoringSystem
-from jobs.scheduler_config import create_scheduler
-from config import Config
 
 # 로깅 설정
 logging.basicConfig(
@@ -67,15 +64,10 @@ class BatchSystemWithAPI:
         logger.info("Starting batch scheduler...")
         
         # 모니터링 시스템 초기화
-        monitoring_config = get_monitoring_config()
-        self.monitoring_system = MonitoringSystem(monitoring_config)
+        self.monitoring_system = MonitoringSystem()
         
-        # 스케줄러 생성
-        self.scheduler = create_scheduler()
-        
-        # 스케줄러 시작
-        self.scheduler.start()
-        logger.info("Batch scheduler started")
+        # 스케줄러는 일단 생략 (API 서버만 테스트)
+        logger.info("Batch scheduler skipped for now")
         
     def run(self):
         """전체 시스템 실행"""
@@ -121,10 +113,8 @@ class BatchSystemWithAPI:
         """시스템 종료"""
         logger.info("Shutting down system...")
         
-        # 스케줄러 종료
-        if self.scheduler:
-            self.scheduler.shutdown(wait=True)
-            logger.info("Scheduler stopped")
+        # 스케줄러 종료 (현재는 스케줄러 없음)
+        logger.info("No scheduler to stop")
         
         # 모니터링 시스템 종료
         if self.monitoring_system:

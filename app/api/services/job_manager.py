@@ -18,9 +18,8 @@ from app.api.schemas import (
 from app.api.config import settings
 from app.core.database_manager import DatabaseManager
 from app.collectors.unified_kto_client import UnifiedKTOClient
-from app.collectors.weather_data_collector import WeatherDataCollector
-from app.jobs.data_management.quality_check_job import DataQualityCheckJob
-from app.jobs.system_maintenance.archive_job import ArchiveJob
+from app.collectors.weather_collector import WeatherDataCollector
+from jobs.quality.data_quality_job import DataQualityJob
 from app.monitoring.monitoring_system import MonitoringSystem
 
 logger = logging.getLogger(__name__)
@@ -260,7 +259,7 @@ class JobManager:
             await self._add_log(job_id, LogLevel.INFO, "데이터 품질 검사 시작")
             
             # 품질 검사 작업 생성
-            quality_job = DataQualityCheckJob()
+            quality_job = DataQualityJob()
             
             job.current_step = "데이터 품질 검사 중"
             job.progress = 50.0
