@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     
     # 서버 설정
     HOST: str = os.getenv("BATCH_API_HOST", "0.0.0.0")
-    PORT: int = int(os.getenv("BATCH_API_PORT", "9000"))
+    PORT: int = int(os.getenv("BATCH_API_PORT", "9090"))
     
     # 보안 설정
     API_KEY: str = os.getenv("BATCH_API_KEY", "batch-api-secret-key")

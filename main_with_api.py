@@ -23,6 +23,18 @@ from app.api.config import settings
 
 # 배치 시스템 임포트
 from app.monitoring.monitoring_system import MonitoringSystem
+from app.schedulers.advanced_scheduler import (
+    get_batch_manager,
+    BatchJobConfig,
+    BatchJobType,
+    JobPriority,
+)
+from app.core.logger import get_logger
+
+# 배치 작업 임포트
+from jobs.data_management.weather_update_job import weather_update_task
+from jobs.monitoring.health_check_job import health_check_task
+from jobs.quality.data_quality_job import DataQualityJob
 
 # 로깅 설정
 logging.basicConfig(
@@ -39,10 +51,11 @@ class BatchSystemWithAPI:
     """API 서버를 포함한 배치 시스템"""
     
     def __init__(self):
-        self.scheduler = None
+        self.batch_manager = None
         self.monitoring_system = None
         self.api_server_thread = None
         self.running = False
+        self.batch_logger = get_logger("batch_system")
         
     def start_api_server(self):
         """API 서버 시작 (별도 스레드)"""
@@ -59,6 +72,75 @@ class BatchSystemWithAPI:
         self.api_server_thread.start()
         logger.info("API server thread started")
         
+    def _register_batch_jobs(self):
+        """배치 작업 등록"""
+        try:
+            # 1. 날씨 데이터 업데이트 (30분마다)
+            weather_config = BatchJobConfig(
+                job_id="weather_update",
+                job_type=BatchJobType.WEATHER_UPDATE,
+                name="날씨 데이터 업데이트",
+                description="외부 날씨 API로부터 최신 날씨 정보 수집",
+                priority=JobPriority.HIGH,
+                max_instances=1,
+                timeout=1800,
+                retry_attempts=3,
+            )
+            
+            def weather_update_sync():
+                return asyncio.run(weather_update_task())
+            
+            self.batch_manager.register_job(
+                weather_config, weather_update_sync, trigger="interval", minutes=30
+            )
+            
+            # 2. 헬스체크 (5분마다)
+            health_config = BatchJobConfig(
+                job_id="health_check",
+                job_type=BatchJobType.HEALTH_CHECK,
+                name="시스템 헬스체크",
+                description="시스템 리소스 및 상태 모니터링",
+                priority=JobPriority.CRITICAL,
+                max_instances=1,
+                timeout=300,
+                retry_attempts=1,
+            )
+            
+            def health_check_sync():
+                return asyncio.run(health_check_task())
+            
+            self.batch_manager.register_job(
+                health_config, health_check_sync, trigger="interval", minutes=5
+            )
+            
+            # 3. 데이터 품질 검사 (매일 새벽 2시)
+            quality_config = BatchJobConfig(
+                job_id="data_quality",
+                job_type=BatchJobType.HEALTH_CHECK,
+                name="데이터 품질 검사",
+                description="시스템 데이터 품질 검증",
+                priority=JobPriority.MEDIUM,
+                max_instances=1,
+                timeout=1200,
+                retry_attempts=2,
+            )
+            
+            def quality_check_task():
+                job = DataQualityJob(quality_config)
+                if asyncio.iscoroutinefunction(job.run):
+                    return asyncio.run(job.run())
+                return job.run()
+            
+            self.batch_manager.register_job(
+                quality_config, quality_check_task, trigger="cron", hour=2, minute=0
+            )
+            
+            self.batch_logger.info("배치 작업 등록 완료")
+            
+        except Exception as e:
+            self.batch_logger.error(f"배치 작업 등록 실패: {e}")
+            raise
+        
     def start_batch_scheduler(self):
         """배치 스케줄러 시작"""
         logger.info("Starting batch scheduler...")
@@ -66,8 +148,15 @@ class BatchSystemWithAPI:
         # 모니터링 시스템 초기화
         self.monitoring_system = MonitoringSystem()
         
-        # 스케줄러는 일단 생략 (API 서버만 테스트)
-        logger.info("Batch scheduler skipped for now")
+        # 배치 매니저 초기화
+        self.batch_manager = get_batch_manager()
+        
+        # 배치 작업 등록
+        self._register_batch_jobs()
+        
+        # 스케줄러 시작
+        self.batch_manager.start()
+        logger.info("Batch scheduler started")
         
     def run(self):
         """전체 시스템 실행"""
@@ -113,8 +202,10 @@ class BatchSystemWithAPI:
         """시스템 종료"""
         logger.info("Shutting down system...")
         
-        # 스케줄러 종료 (현재는 스케줄러 없음)
-        logger.info("No scheduler to stop")
+        # 스케줄러 종료
+        if self.batch_manager:
+            self.batch_manager.shutdown()
+            logger.info("Batch scheduler stopped")
         
         # 모니터링 시스템 종료
         if self.monitoring_system:
