@@ -87,7 +87,7 @@ class DeduplicationManager:
                 # 1. 정확한 일치 검사
                 cursor.execute("""
                     SELECT region_id, region_name, region_code
-                    FROM unified_regions
+                    FROM regions
                     WHERE region_name = %s 
                       AND region_level = %s
                       AND (administrative_code = %s OR %s IS NULL)
@@ -110,7 +110,7 @@ class DeduplicationManager:
                 # 2. 부분 문자열 검사 (유사도 대신)
                 cursor.execute("""
                     SELECT region_id, region_name, region_code
-                    FROM unified_regions
+                    FROM regions
                     WHERE region_level = %s
                       AND (
                           region_name LIKE %s OR 
@@ -142,7 +142,7 @@ class DeduplicationManager:
                                    ST_Point(%s, %s)::geography,
                                    ST_Point(center_longitude, center_latitude)::geography
                                ) as distance_meters
-                        FROM unified_regions
+                        FROM regions
                         WHERE region_level = %s
                           AND center_latitude IS NOT NULL
                           AND center_longitude IS NOT NULL
@@ -180,7 +180,7 @@ class DeduplicationManager:
                     SELECT region_name_full, region_name_en, 
                            center_latitude, center_longitude,
                            administrative_code, updated_at
-                    FROM unified_regions
+                    FROM regions
                     WHERE region_id = %s
                 """, (region_id,))
                 
@@ -356,7 +356,7 @@ class DeduplicationManager:
                 # 1. 중복 지역 찾기
                 cursor.execute("""
                     SELECT region_name, region_level, COUNT(*) as cnt
-                    FROM unified_regions
+                    FROM regions
                     GROUP BY region_name, region_level
                     HAVING COUNT(*) > 1
                 """)
@@ -365,15 +365,18 @@ class DeduplicationManager:
                 result['duplicate_regions'] = len(duplicate_regions)
                 
                 if not dry_run and duplicate_regions:
-                    # 실제 중복 제거 수행
+                    # 실제 중복 제거 수행 (비활성화)
                     cursor.execute("""
-                        DELETE FROM unified_regions ur1
-                        WHERE ur1.region_id NOT IN (
-                            SELECT MIN(ur2.region_id)
-                            FROM unified_regions ur2
+                        UPDATE regions ur1
+                        SET is_active = false
+                        WHERE ur1.region_code NOT IN (
+                            SELECT MIN(ur2.region_code)
+                            FROM regions ur2
                             WHERE ur2.region_name = ur1.region_name 
                               AND ur2.region_level = ur1.region_level
+                              AND ur2.is_active = true
                         )
+                        AND ur1.is_active = true
                     """)
                 
                 # 2. 중복 매핑 찾기
@@ -426,13 +429,13 @@ class DeduplicationManager:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
                     SELECT 
-                        (SELECT COUNT(*) FROM unified_regions) as total_regions,
+                        (SELECT COUNT(*) FROM regions) as total_regions,
                         (SELECT COUNT(*) FROM region_api_mappings) as total_mappings,
                         (SELECT COUNT(*) FROM coordinate_transformations) as total_coordinates,
                         (SELECT COUNT(DISTINCT api_provider) FROM region_api_mappings) as api_providers,
-                        (SELECT COUNT(*) FROM unified_regions WHERE region_level = 1) as provinces,
-                        (SELECT COUNT(*) FROM unified_regions WHERE region_level = 2) as cities,
-                        (SELECT COUNT(*) FROM unified_regions WHERE region_level = 3) as districts
+                        (SELECT COUNT(*) FROM regions WHERE region_level = 1) as provinces,
+                        (SELECT COUNT(*) FROM regions WHERE region_level = 2) as cities,
+                        (SELECT COUNT(*) FROM regions WHERE region_level = 3) as districts
                 """)
                 
                 return dict(cursor.fetchone())
