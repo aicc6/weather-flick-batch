@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 from enum import Enum
+from dataclasses import asdict
 
 from app.core.base_job import BaseJob, JobResult, JobConfig
 from app.core.database_manager import DatabaseManager
