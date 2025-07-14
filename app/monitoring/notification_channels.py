@@ -391,6 +391,10 @@ class NotificationManager:
         self.channels.append(channel)
         self.logger.info(f"알림 채널 추가: {channel.__class__.__name__}")
     
+    def register_channel(self, name: str, channel: NotificationChannel):
+        """알림 채널 등록 (add_channel의 별칭)"""
+        self.add_channel(channel)
+    
     def remove_channel(self, channel: NotificationChannel):
         """알림 채널 제거"""
         if channel in self.channels:

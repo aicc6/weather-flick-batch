@@ -13,6 +13,11 @@ from app.monitoring.notification_channels import (
     EmailNotificationChannel,
     Alert
 )
+from app.monitoring.fcm_notification_channel import (
+    FCMNotificationChannel, 
+    FCMConfig,
+    send_fcm_notification_to_user
+)
 from app.services.weather_comparison_service import WeatherComparisonService
 from app.monitoring.monitoring_system import AlertSeverity
 from app.collectors.weather_collector import WeatherCollector
@@ -42,6 +47,19 @@ class WeatherChangeNotificationJob(BaseJob):
             'from_email': self.config.get('FROM_EMAIL', 'noreply@weatherflick.com')
         })
         self.notification_manager.register_channel('email', email_channel)
+        
+        # FCM 채널 설정 (Firebase 설정이 있는 경우)
+        if self.config.get('FIREBASE_CREDENTIALS_PATH'):
+            try:
+                fcm_config = FCMConfig(
+                    credentials_path=self.config.get('FIREBASE_CREDENTIALS_PATH'),
+                    project_id=self.config.get('FIREBASE_PROJECT_ID')
+                )
+                fcm_channel = FCMNotificationChannel(fcm_config)
+                self.notification_manager.register_channel('fcm', fcm_channel)
+                self.logger.info("FCM 알림 채널 활성화됨")
+            except Exception as e:
+                self.logger.warning(f"FCM 채널 초기화 실패: {str(e)}. FCM 알림이 비활성화됩니다.")
         
     async def execute(self) -> Dict[str, Any]:
         """Job 실행"""
@@ -309,6 +327,25 @@ class WeatherChangeNotificationJob(BaseJob):
                 email_to=plan['email']
             )
             
+            # FCM 푸시 알림 전송 (별도로 처리)
+            if self.config.get('FIREBASE_CREDENTIALS_PATH'):
+                try:
+                    fcm_success = await send_fcm_notification_to_user(
+                        user_id=str(plan['user_id']),
+                        title=message_data['subject'],
+                        body=self._create_fcm_body(changes),
+                        data={
+                            'type': 'weather_change',
+                            'plan_id': str(plan['plan_id']),
+                            'notification_id': str(notification_id)
+                        },
+                        url=f"/travel-plans/{plan['plan_id']}"
+                    )
+                    if fcm_success:
+                        self.logger.info(f"FCM 알림 전송 성공: 사용자 {plan['user_id']}")
+                except Exception as e:
+                    self.logger.error(f"FCM 알림 전송 실패: {str(e)}")
+            
             # 전송 결과 업데이트
             if success:
                 await self._update_notification_status(notification_id, 'sent')
@@ -410,3 +447,29 @@ class WeatherChangeNotificationJob(BaseJob):
             self.logger.warning("SMTP 설정이 없음. 이메일 전송이 불가능할 수 있습니다.")
             
         return True
+    
+    def _create_fcm_body(self, changes: List) -> str:
+        """FCM 알림용 간단한 본문 생성"""
+        if not changes:
+            return "여행 일정의 날씨가 변경되었습니다."
+        
+        # 가장 중요한 변화 1-2개만 표시
+        important_changes = []
+        for change in changes[:2]:  # 최대 2개
+            if change.field == 'rain_probability':
+                if change.new_value > change.old_value:
+                    important_changes.append("☔ 비 올 확률 증가")
+                else:
+                    important_changes.append("☀️ 날씨 개선")
+            elif change.field in ['max_temp', 'min_temp']:
+                temp_diff = abs(change.new_value - change.old_value)
+                if temp_diff >= 5:
+                    if change.new_value > change.old_value:
+                        important_changes.append(f"🌡️ 기온 {temp_diff:.0f}°C 상승")
+                    else:
+                        important_changes.append(f"❄️ 기온 {temp_diff:.0f}°C 하락")
+        
+        if important_changes:
+            return " | ".join(important_changes)
+        else:
+            return "날씨 정보가 업데이트되었습니다. 확인해주세요!"
