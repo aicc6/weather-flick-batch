@@ -30,6 +30,10 @@ class AlertLevel(Enum):
     CRITICAL = "critical"
 
 
+# AlertSeverity는 AlertLevel의 별칭
+AlertSeverity = AlertLevel
+
+
 class ComponentType(Enum):
     """모니터링 대상 구성 요소"""
     API_KEYS = "api_keys"
