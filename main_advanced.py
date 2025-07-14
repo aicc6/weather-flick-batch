@@ -38,6 +38,7 @@ from jobs.tourism.comprehensive_tourism_job import (
     IncrementalTourismJob,
 )
 from jobs.system_maintenance.database_backup_job import DatabaseBackupJob
+from jobs.notification.weather_change_notification_job import WeatherChangeNotificationJob
 
 
 class WeatherFlickBatchSystem:
@@ -278,8 +279,34 @@ class WeatherFlickBatchSystem:
             health_check_config, health_check_sync, trigger="interval", minutes=5
         )
 
+        # 여행 플랜 날씨 변화 알림 작업 (하루 3번: 오전 9시, 오후 3시, 오후 9시)
+        weather_notification_config = BatchJobConfig(
+            job_id="weather_change_notification",
+            job_type=BatchJobType.NOTIFICATION,
+            name="여행 플랜 날씨 변화 알림",
+            description="여행 플랜의 날씨 변화를 감지하고 사용자에게 알림 전송",
+            priority=JobPriority.HIGH,
+            max_instances=1,
+            timeout=1800,  # 30분
+            retry_attempts=2,
+        )
+
+        def weather_notification_task():
+            job = WeatherChangeNotificationJob()
+            return asyncio.run(job.execute())
+
+        # 하루 3번 실행 (9시, 15시, 21시)
+        for hour in [9, 15, 21]:
+            self.batch_manager.register_job(
+                weather_notification_config,
+                weather_notification_task,
+                trigger="cron",
+                hour=hour,
+                minute=0,
+            )
+
         # TODO: 성능 메트릭 수집 작업 추가 (1분마다)
-        # TODO: 알림 발송 작업 추가
+        # TODO: 기타 알림 발송 작업 추가
 
         self.logger.info("모니터링 배치 작업 설정 완료")
 
