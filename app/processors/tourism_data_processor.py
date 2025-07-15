@@ -113,7 +113,9 @@ class TourismDataProcessor:
                 "contentid": "content_id",
                 "areacode": "region_code",
                 "sigungucode": "sigungu_code",
-                "title": "facility_name",
+                # 시설명: faciltyName 우선, 없으면 title 사용
+                "faciltyName": "facility_name",
+                "title": "facility_name",  # fallback
                 "cat1": "category_code",
                 "cat2": "sub_category_code",
                 "addr1": "address",

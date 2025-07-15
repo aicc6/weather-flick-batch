@@ -54,7 +54,7 @@ class DatabaseManagerExtension:
         try:
             # execute_query 메서드 사용 (RETURNING 절 처리)
             result = self.db_manager.execute_query(query, params)
-            
+
             # 결과 형태에 따른 처리
             if isinstance(result, list) and len(result) > 0:
                 # fetch_all 형태로 반환된 경우
@@ -68,7 +68,7 @@ class DatabaseManagerExtension:
                 raw_data_id = str(result["id"])
                 self.logger.debug(f"원본 데이터 삽입 완료: {raw_data_id}")
                 return raw_data_id
-            
+
             # 결과가 올바르지 않은 경우
             self.logger.error(f"예상치 못한 결과 형태: {type(result)} - {result}")
             raise Exception("원본 데이터 삽입 결과를 받을 수 없습니다")
@@ -174,7 +174,7 @@ class DatabaseManagerExtension:
         """원본 데이터 조회"""
 
         query = """
-        SELECT * FROM api_raw_data 
+        SELECT * FROM api_raw_data
         WHERE id = %s
         """
 
@@ -191,16 +191,16 @@ class DatabaseManagerExtension:
 
         # 1. 만료된 데이터 아카이브 표시
         archive_query = """
-        UPDATE api_raw_data 
-        SET is_archived = true 
-        WHERE expires_at < CURRENT_TIMESTAMP 
+        UPDATE api_raw_data
+        SET is_archived = true
+        WHERE expires_at < CURRENT_TIMESTAMP
         AND is_archived = false
         """
 
         # 2. 아카이브된 데이터 개수 조회
         count_query = """
-        SELECT COUNT(*) as count 
-        FROM api_raw_data 
+        SELECT COUNT(*) as count
+        FROM api_raw_data
         WHERE is_archived = true
         """
 
@@ -288,6 +288,44 @@ class DatabaseManagerExtension:
 
         try:
             self.db_manager.execute_update(query, params)
+            # --- travel_courses에도 저장 ---
+            # 매핑: 관광지 데이터에서 여행코스 데이터로 변환
+            travel_course_data = {
+                "content_id": data.get("content_id"),
+                "region_code": data.get("region_code"),
+                "sigungu_code": data.get("sigungu_code"),
+                "course_name": data.get("attraction_name"),
+                "category_code": data.get("category_code"),
+                "sub_category_code": data.get("sub_category_code"),
+                "address": data.get("address"),
+                "detail_address": data.get("detail_address"),
+                "latitude": data.get("latitude"),
+                "longitude": data.get("longitude"),
+                "zipcode": data.get("zipcode") or data.get("zip_code"),
+                "tel": data.get("tel") or data.get("telname"),
+                "homepage": data.get("homepage"),
+                "overview": data.get("description"),
+                "first_image": data.get("first_image") or data.get("image_url"),
+                "first_image_small": data.get("first_image_small"),
+                "course_theme": data.get("course_theme"),
+                "course_distance": data.get("course_distance"),
+                "required_time": data.get("required_time"),
+                "difficulty_level": data.get("difficulty_level"),
+                "schedule": data.get("schedule"),
+                "booktour": data.get("booktour") or data.get("book_tour"),
+                "createdtime": data.get("createdtime") or data.get("created_time"),
+                "modifiedtime": data.get("modifiedtime") or data.get("modified_time"),
+                "telname": data.get("telname"),
+                "faxno": data.get("faxno"),
+                "mlevel": data.get("mlevel"),
+                "detail_intro_info": data.get("detail_intro_info"),
+                "detail_additional_info": data.get("detail_additional_info"),
+                "raw_data_id": data.get("raw_data_id"),
+                "last_sync_at": data.get("last_sync_at"),
+                "data_quality_score": data.get("data_quality_score"),
+                "processing_status": data.get("processing_status"),
+            }
+            self.upsert_travel_course(travel_course_data)
             return True
         except Exception as e:
             self.logger.error(f"관광지 데이터 UPSERT 실패: {e}")
@@ -298,7 +336,7 @@ class DatabaseManagerExtension:
 
         query = """
         INSERT INTO accommodations (
-            content_id, region_code, accommodation_name, address, 
+            content_id, region_code, accommodation_name, address,
             latitude, longitude, first_image,
             homepage, booktour, createdtime, modifiedtime, telname, faxno, zipcode, mlevel,
             detail_intro_info, detail_additional_info,
@@ -594,13 +632,13 @@ class DatabaseManagerExtension:
         """API 호출 통계 조회"""
 
         query = """
-        SELECT 
+        SELECT
             COUNT(*) FILTER (WHERE DATE(created_at) = CURRENT_DATE) as today_calls,
             COUNT(CASE WHEN response_status = 200 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) as success_rate,
             AVG(request_duration) as avg_response_time_ms,
             MAX(created_at) as last_call_at,
             SUM(response_size) / 1024.0 / 1024.0 as total_raw_data_size_mb
-        FROM api_raw_data 
+        FROM api_raw_data
         WHERE api_provider = %s
         AND created_at >= CURRENT_DATE - INTERVAL '7 days'
         """
@@ -626,7 +664,7 @@ class DatabaseManagerExtension:
         """데이터 품질 임계값 조회"""
 
         query = """
-        SELECT * FROM data_quality_thresholds 
+        SELECT * FROM data_quality_thresholds
         WHERE table_name = %s
         """
 
@@ -653,15 +691,15 @@ class DatabaseManagerExtension:
         try:
             query = """
             INSERT INTO content_images (
-                content_id, content_type_id, img_name, origin_img_url, 
+                content_id, content_type_id, img_name, origin_img_url,
                 small_image_url, serial_num, cpyrht_div_cd, img_size,
                 img_width, img_height, raw_data_id, data_quality_score,
                 processing_status, last_sync_at, created_at, updated_at
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
-            ON CONFLICT (content_id, serial_num) 
-            DO UPDATE SET 
+            ON CONFLICT (content_id, serial_num)
+            DO UPDATE SET
                 img_name = EXCLUDED.img_name,
                 origin_img_url = EXCLUDED.origin_img_url,
                 small_image_url = EXCLUDED.small_image_url,
@@ -671,7 +709,7 @@ class DatabaseManagerExtension:
                 img_height = EXCLUDED.img_height,
                 updated_at = CURRENT_TIMESTAMP
             """
-            
+
             current_time = datetime.now()
             params = (
                 image_data.get("content_id"),
@@ -691,10 +729,10 @@ class DatabaseManagerExtension:
                 current_time,
                 current_time
             )
-            
+
             self.db_manager.execute_update(query, params)
             return True
-            
+
         except Exception as e:
             self.logger.error(f"컨텐츠 이미지 저장 실패: {e}")
             return False
@@ -715,7 +753,7 @@ class DatabaseManagerExtension:
                 info_text = EXCLUDED.info_text,
                 updated_at = CURRENT_TIMESTAMP
             """
-            
+
             current_time = datetime.now()
             params = (
                 detail_data.get("content_id"),
@@ -727,10 +765,10 @@ class DatabaseManagerExtension:
                 current_time,
                 current_time
             )
-            
+
             self.db_manager.execute_update(query, params)
             return True
-            
+
         except Exception as e:
             self.logger.error(f"컨텐츠 상세 정보 저장 실패: {e}")
             return False
@@ -740,15 +778,15 @@ class DatabaseManagerExtension:
         try:
             if not images:
                 return 0
-            
+
             success_count = 0
             for image in images:
                 if self.upsert_content_images(image):
                     success_count += 1
-            
+
             self.logger.info(f"컨텐츠 이미지 배치 삽입 완료: {success_count}/{len(images)}")
             return success_count
-            
+
         except Exception as e:
             self.logger.error(f"컨텐츠 이미지 배치 삽입 실패: {e}")
             return 0
@@ -758,15 +796,15 @@ class DatabaseManagerExtension:
         try:
             if not details:
                 return 0
-            
+
             success_count = 0
             for detail in details:
                 if self.upsert_content_detail_info(detail):
                     success_count += 1
-            
+
             self.logger.info(f"컨텐츠 상세 정보 배치 삽입 완료: {success_count}/{len(details)}")
             return success_count
-            
+
         except Exception as e:
             self.logger.error(f"컨텐츠 상세 정보 배치 삽입 실패: {e}")
             return 0
@@ -1192,7 +1230,7 @@ def extend_database_manager(db_manager: SyncDatabaseManager) -> SyncDatabaseMana
     db_manager.upsert_shopping = extension.upsert_shopping
     db_manager.get_api_call_statistics = extension.get_api_call_statistics
     db_manager.get_data_quality_thresholds = extension.get_data_quality_thresholds
-    
+
     # 새로운 테이블 지원 메서드 추가
     db_manager.upsert_content_images = extension.upsert_content_images
     db_manager.upsert_content_detail_info = extension.upsert_content_detail_info
