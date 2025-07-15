@@ -7,10 +7,10 @@ API 저장 시스템의 성능을 실시간으로 모니터링하고 측정하�
 import logging
 import time
 import threading
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
-from collections import deque, defaultdict
+from collections import deque
 from enum import Enum
 import statistics
 

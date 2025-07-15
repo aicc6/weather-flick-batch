@@ -26,8 +26,8 @@ import time
 import json
 import traceback
 from pathlib import Path
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
+from datetime import datetime
+from typing import Dict, Any
 
 # 프로젝트 루트 추가
 project_root = Path(__file__).parent.parent
@@ -35,11 +35,9 @@ sys.path.append(str(project_root))
 
 from app.core.advanced_cache_manager import (
     get_advanced_cache_manager, 
-    CacheStrategy, 
-    CacheWarming, 
-    CacheInvalidation
+    CacheWarming
 )
-from app.core.cache_monitoring import get_cache_monitor, AlertLevel, MetricType
+from app.core.cache_monitoring import get_cache_monitor
 from app.core.logger import get_logger
 from utils.redis_client import RedisClient
 
@@ -800,7 +798,7 @@ async def main():
             result = await optimizer.test_cache_invalidation()
             
             if result.get('success'):
-                print(f"✅ 무효화 테스트 완료")
+                print("✅ 무효화 테스트 완료")
                 print(f"   의존성 무효화: {'✅' if result.get('invalidation_effective') else '❌'}")
                 print(f"   배치 삭제: {'✅' if result.get('batch_delete_effective') else '❌'}")
             else:

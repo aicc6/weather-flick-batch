@@ -12,15 +12,13 @@ Redis 캐시의 성능을 최적화하고 고급 캐싱 전략을 제공하는 �
 import asyncio
 import json
 import time
-import hashlib
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Set, Callable, Union
-from dataclasses import dataclass, asdict
+from datetime import datetime
+from typing import Dict, List, Any, Optional, Callable
+from dataclasses import dataclass
 from contextlib import asynccontextmanager
 from enum import Enum
 
-import redis.asyncio as aioredis
 from utils.redis_client import RedisClient
 
 
@@ -630,7 +628,7 @@ class AdvancedCacheManager:
                 try:
                     client.ping()
                     is_healthy = True
-                except:
+                except Exception:
                     is_healthy = False
             
             return {

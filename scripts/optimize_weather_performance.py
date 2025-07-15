@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Weather Forecasts 테이블 성능 최적화 스크립트
+Weather Forecast 테이블 성능 최적화 스크립트
 
 이 스크립트는 다음 작업을 수행합니다:
 1. 현재 테이블 및 인덱스 상태 분석
@@ -16,11 +16,10 @@ python scripts/optimize_weather_performance.py [--analyze-only]
 """
 
 import sys
-import os
 import argparse
 import time
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # 프로젝트 루트 추가
 project_root = Path(__file__).parent.parent
@@ -45,9 +44,9 @@ class WeatherPerformanceOptimizer:
             # 테이블 크기 분석
             size_query = """
             SELECT 
-                pg_size_pretty(pg_total_relation_size('weather_forecasts')) as total_size,
-                pg_size_pretty(pg_relation_size('weather_forecasts')) as table_size,
-                pg_size_pretty(pg_total_relation_size('weather_forecasts') - pg_relation_size('weather_forecasts')) as indexes_size
+                pg_size_pretty(pg_total_relation_size('weather_forecast')) as total_size,
+                pg_size_pretty(pg_relation_size('weather_forecast')) as table_size,
+                pg_size_pretty(pg_total_relation_size('weather_forecast') - pg_relation_size('weather_forecast')) as indexes_size
             """
             
             size_info = self.db_manager.fetch_one(size_query)
@@ -61,7 +60,7 @@ class WeatherPerformanceOptimizer:
                 MAX(forecast_date) as latest_date,
                 COUNT(DISTINCT region_code) as unique_regions,
                 COUNT(DISTINCT forecast_date) as unique_dates
-            FROM weather_forecasts
+            FROM weather_forecast
             """
             
             stats_info = self.db_manager.fetch_one(stats_query)
@@ -74,7 +73,7 @@ class WeatherPerformanceOptimizer:
                 indexdef,
                 pg_size_pretty(pg_relation_size(indexname::regclass)) as index_size
             FROM pg_indexes 
-            WHERE tablename = 'weather_forecasts'
+            WHERE tablename = 'weather_forecast'
             ORDER BY indexname
             """
             
@@ -89,7 +88,7 @@ class WeatherPerformanceOptimizer:
                 COUNT(*) FILTER (WHERE max_temp IS NULL) as missing_max_temp,
                 COUNT(*) FILTER (WHERE weather_condition IS NULL OR weather_condition = '') as missing_condition,
                 COUNT(*) FILTER (WHERE forecast_date < CURRENT_DATE - INTERVAL '30 days') as old_records
-            FROM weather_forecasts
+            FROM weather_forecast
             """
             
             quality_info = self.db_manager.fetch_one(quality_query)
@@ -110,7 +109,7 @@ class WeatherPerformanceOptimizer:
         test_queries = {
             "region_latest_forecast": """
                 SELECT region_code, forecast_date, forecast_time, min_temp, max_temp
-                FROM weather_forecasts 
+                FROM weather_forecast 
                 WHERE region_code = '11' 
                 ORDER BY forecast_date DESC, forecast_time DESC 
                 LIMIT 10
@@ -118,13 +117,13 @@ class WeatherPerformanceOptimizer:
             
             "date_range_search": """
                 SELECT COUNT(*) 
-                FROM weather_forecasts 
+                FROM weather_forecast 
                 WHERE forecast_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
             """,
             
             "coordinate_lookup": """
                 SELECT region_code, forecast_date, min_temp, max_temp
-                FROM weather_forecasts 
+                FROM weather_forecast 
                 WHERE nx = 60 AND ny = 127 
                 AND forecast_date >= CURRENT_DATE
                 ORDER BY forecast_date, forecast_time
@@ -133,7 +132,7 @@ class WeatherPerformanceOptimizer:
             
             "quality_check": """
                 SELECT COUNT(*) 
-                FROM weather_forecasts 
+                FROM weather_forecast 
                 WHERE min_temp IS NULL OR max_temp IS NULL 
                 OR weather_condition IS NULL
             """
@@ -262,7 +261,7 @@ class WeatherPerformanceOptimizer:
         # 테이블 크기
         if 'table_sizes' in analysis:
             sizes = analysis['table_sizes']
-            report_lines.append(f"\n💾 저장공간 사용량:")
+            report_lines.append("\n💾 저장공간 사용량:")
             report_lines.append(f"  - 전체 크기: {sizes['total_size']}")
             report_lines.append(f"  - 테이블 크기: {sizes['table_size']}")
             report_lines.append(f"  - 인덱스 크기: {sizes['indexes_size']}")
@@ -277,7 +276,7 @@ class WeatherPerformanceOptimizer:
         # 데이터 품질
         if 'data_quality' in analysis:
             quality = analysis['data_quality']
-            report_lines.append(f"\n🎯 데이터 품질:")
+            report_lines.append("\n🎯 데이터 품질:")
             report_lines.append(f"  - 누락된 최저온도: {quality['missing_min_temp']}건")
             report_lines.append(f"  - 누락된 최고온도: {quality['missing_max_temp']}건")
             report_lines.append(f"  - 누락된 날씨상태: {quality['missing_condition']}건")
@@ -285,7 +284,7 @@ class WeatherPerformanceOptimizer:
         
         # 성능 측정 결과
         if performance_before:
-            report_lines.append(f"\n⚡ 쿼리 성능 측정:")
+            report_lines.append("\n⚡ 쿼리 성능 측정:")
             for query_name, result in performance_before.items():
                 if 'execution_time' in result:
                     report_lines.append(f"  - {query_name}: {result['execution_time']:.3f}초")
@@ -293,7 +292,7 @@ class WeatherPerformanceOptimizer:
                     report_lines.append(f"  - {query_name}: 오류 발생")
         
         # 개선 권장사항
-        report_lines.append(f"\n💡 권장사항:")
+        report_lines.append("\n💡 권장사항:")
         
         if 'data_quality' in analysis:
             quality = analysis['data_quality']

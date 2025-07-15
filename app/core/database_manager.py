@@ -337,7 +337,7 @@ class SyncDatabaseManager(BaseDatabaseManager):
 
         try:
             return self.upsert(
-                "weather_forecasts",
+                "weather_forecast",
                 formatted_data,
                 ["region_code", "forecast_date", "forecast_time"],
             )
@@ -448,7 +448,7 @@ class SyncDatabaseManager(BaseDatabaseManager):
     ) -> None:
         """배치 작업 결과 로깅"""
         query = """
-        INSERT INTO batch_job_logs (job_name, job_type, status, start_time, end_time, processed_records, error_message)
+        INSERT INTO batch_job_logs (job_name, job_type, status, start_time, end_time, error_message, result)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         try:
@@ -460,8 +460,8 @@ class SyncDatabaseManager(BaseDatabaseManager):
                     status,
                     start_time,
                     end_time,
-                    processed_records,
                     error_message,
+                    json.dumps({"processed_records": processed_records}),
                 ),
             )
             self.logger.info(f"작업 로그 저장 완료: {job_name}")

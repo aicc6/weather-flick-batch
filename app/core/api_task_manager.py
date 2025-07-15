@@ -5,8 +5,7 @@ API 작업 관리자
 """
 
 import time
-from typing import Dict, List, Optional, Callable
-from datetime import datetime
+from typing import Dict, Callable
 import threading
 
 from app.core.smart_scheduler import SmartAPIScheduler, APIStatus

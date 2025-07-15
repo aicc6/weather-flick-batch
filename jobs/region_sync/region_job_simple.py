@@ -304,7 +304,7 @@ class RegionJobSimple(BaseJob):
         try:
             result = self.db_manager.fetch_one("""
                 INSERT INTO batch_job_logs 
-                (job_name, job_type, status, started_at, execution_context)
+                (job_name, job_type, status, start_time, parameters)
                 VALUES (%s, %s, %s, %s, %s)
                 RETURNING id
             """, (
@@ -335,9 +335,9 @@ class RegionJobSimple(BaseJob):
                 
             self.db_manager.execute_query("""
                 UPDATE batch_job_logs 
-                SET status = %s, completed_at = %s, processed_records = %s, error_message = %s
+                SET status = %s, end_time = %s, error_message = %s, result = %s
                 WHERE id = %s
-            """, (status, datetime.now(), processed_records, error_message, job_log_id))
+            """, (status, datetime.now(), error_message, json.dumps({"processed_records": processed_records}), job_log_id))
             
         except Exception as e:
             self.logger.error(f"배치 작업 로그 완료 실패: {e}")
@@ -363,7 +363,7 @@ if __name__ == "__main__":
         try:
             result = await run_region_job_simple()
             
-            print(f"\n✅ 배치 작업 완료")
+            print("\n✅ 배치 작업 완료")
             print(f"전체 상태: {result['overall_status']}")
             print(f"처리된 레코드: {result.get('processed_records', 0)}")
             

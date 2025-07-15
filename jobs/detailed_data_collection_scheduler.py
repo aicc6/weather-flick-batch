@@ -5,12 +5,11 @@
 목적: 기존 컨텐츠에 대한 상세 정보(detailCommon2, detailIntro2, detailInfo2, detailImage2) 수집
 """
 
-import os
 import sys
 import asyncio
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 from pathlib import Path
 

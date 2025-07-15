@@ -13,9 +13,8 @@ from dataclasses import dataclass
 from typing import Dict, Any, Optional, List
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime
 
-from .monitoring_system import Alert, AlertLevel, ComponentType
+from .monitoring_system import Alert, AlertLevel
 
 
 @dataclass

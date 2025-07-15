@@ -13,7 +13,6 @@ from typing import Iterator, List, Dict, Any, Optional, Callable
 from dataclasses import dataclass
 from contextlib import contextmanager
 import weakref
-from collections import defaultdict
 
 
 @dataclass

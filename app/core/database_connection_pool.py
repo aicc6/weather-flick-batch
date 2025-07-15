@@ -13,7 +13,6 @@ import logging
 from dataclasses import dataclass
 import threading
 import time
-from queue import Queue, Empty
 
 from config.settings import get_database_config
 

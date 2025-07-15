@@ -391,7 +391,7 @@ class NotificationManager:
         message += f"품질 점수: {quality_score:.1f}/100\n문제 개수: {issue_count}개"
 
         if issues:
-            message += f"\n\n주요 문제:\n" + "\n".join(
+            message += "\n\n주요 문제:\n" + "\n".join(
                 f"• {issue}" for issue in issues[:5]
             )
 

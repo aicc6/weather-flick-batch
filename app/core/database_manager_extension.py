@@ -9,15 +9,10 @@ import uuid
 import logging
 import json
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 from app.core.database_manager import SyncDatabaseManager
 from app.core.batch_insert_optimizer import (
-    BatchInsertOptimizer, 
-    optimize_tourism_data_insert
-)
-from config.batch_optimization_config import (
-    get_tourism_batch_config,
-    BatchOptimizationConfig
+    BatchInsertOptimizer
 )
 
 
@@ -282,8 +277,8 @@ class DatabaseManagerExtension:
             data.get("faxno") or data.get("fax_no"),
             data.get("zipcode") or data.get("zip_code"),
             data.get("mlevel") or data.get("map_level"),
-            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
-            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            json.dumps(data.get("detail_intro_info") or data.get("intro_info"), ensure_ascii=False) if data.get("detail_intro_info") or data.get("intro_info") else None,
+            json.dumps(data.get("detail_additional_info") or data.get("additional_info"), ensure_ascii=False) if data.get("detail_additional_info") or data.get("additional_info") else None,
             # 메타데이터 필드들
             data.get("raw_data_id"),
             data.get("last_sync_at"),
@@ -351,8 +346,8 @@ class DatabaseManagerExtension:
             data.get("faxno") or data.get("fax_no"),
             data.get("zipcode") or data.get("zip_code"),
             data.get("mlevel") or data.get("map_level"),
-            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
-            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            json.dumps(data.get("detail_intro_info") or data.get("intro_info"), ensure_ascii=False) if data.get("detail_intro_info") or data.get("intro_info") else None,
+            json.dumps(data.get("detail_additional_info") or data.get("additional_info"), ensure_ascii=False) if data.get("detail_additional_info") or data.get("additional_info") else None,
             # 메타데이터 필드들
             data.get("raw_data_id"),
             data.get("last_sync_at"),
@@ -423,8 +418,8 @@ class DatabaseManagerExtension:
             data.get("faxno") or data.get("fax_no"),
             data.get("zipcode") or data.get("zip_code"),
             data.get("mlevel") or data.get("map_level"),
-            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
-            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            json.dumps(data.get("detail_intro_info") or data.get("intro_info"), ensure_ascii=False) if data.get("detail_intro_info") or data.get("intro_info") else None,
+            json.dumps(data.get("detail_additional_info") or data.get("additional_info"), ensure_ascii=False) if data.get("detail_additional_info") or data.get("additional_info") else None,
             # 메타데이터 필드들
             data.get("raw_data_id"),
             data.get("last_sync_at"),
@@ -443,13 +438,13 @@ class DatabaseManagerExtension:
 
         query = """
         INSERT INTO pet_tour_info (
-            content_id, content_type_id, title, address, latitude, longitude,
+            id, content_id, content_type_id, title, address, latitude, longitude,
             area_code, sigungu_code, tel, homepage, overview,
             cat1, cat2, cat3, first_image, first_image2,
             pet_acpt_abl, pet_info, raw_data_id, data_quality_score,
             processing_status, last_sync_at
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
         ON CONFLICT (content_id) DO UPDATE SET
             content_type_id = EXCLUDED.content_type_id,
@@ -477,6 +472,7 @@ class DatabaseManagerExtension:
         """
 
         params = (
+            str(uuid.uuid4()),  # ID 필드에 UUID 생성
             data.get("content_id"),
             data.get("content_type_id"),
             data.get("title"),
@@ -515,13 +511,13 @@ class DatabaseManagerExtension:
         INSERT INTO restaurants (
             content_id, region_code, restaurant_name, address, detail_address,
             latitude, longitude, first_image, first_image_small, tel,
-            category_code, sub_category_code, sigungu_code,
+            category_code, sub_category_code,
             overview, homepage,
             booktour, createdtime, modifiedtime, telname, faxno, zipcode, mlevel,
             detail_intro_info, detail_additional_info,
             raw_data_id, last_sync_at, data_quality_score
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
         ON CONFLICT (content_id) DO UPDATE SET
             region_code = EXCLUDED.region_code,
@@ -535,7 +531,6 @@ class DatabaseManagerExtension:
             tel = EXCLUDED.tel,
             category_code = EXCLUDED.category_code,
             sub_category_code = EXCLUDED.sub_category_code,
-            sigungu_code = EXCLUDED.sigungu_code,
             overview = EXCLUDED.overview,
             homepage = EXCLUDED.homepage,
             booktour = EXCLUDED.booktour,
@@ -566,7 +561,6 @@ class DatabaseManagerExtension:
             data.get("phone_number"),   # 변환된 데이터에서 온 필드명
             data.get("category_large_code"),   # 변환된 데이터에서 온 필드명
             data.get("category_medium_code"),  # 변환된 데이터에서 온 필드명
-            data.get("sigungu_code"),
             data.get("description"),    # 변환된 데이터에서 온 필드명
             data.get("homepage_url"),   # 변환된 데이터에서 온 필드명
             # 새로 추가된 필드들
@@ -577,8 +571,8 @@ class DatabaseManagerExtension:
             data.get("faxno") or data.get("fax_no"),
             data.get("zipcode") or data.get("zip_code"),
             data.get("mlevel") or data.get("map_level"),
-            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
-            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            json.dumps(data.get("detail_intro_info") or data.get("intro_info"), ensure_ascii=False) if data.get("detail_intro_info") or data.get("intro_info") else None,
+            json.dumps(data.get("detail_additional_info") or data.get("additional_info"), ensure_ascii=False) if data.get("detail_additional_info") or data.get("additional_info") else None,
             # 메타데이터 필드들
             data.get("raw_data_id"),
             data.get("last_sync_at"),
@@ -782,7 +776,7 @@ class DatabaseManagerExtension:
 
         query = """
         INSERT INTO cultural_facilities (
-            content_id, region_code, sigungu_code, facility_name, category_code, sub_category_code,
+            content_id, region_code, facility_name, category_code, sub_category_code,
             address, detail_address, latitude, longitude, zipcode, tel,
             homepage, overview, first_image, first_image_small,
             facility_type, admission_fee, operating_hours, parking_info, rest_date, use_season, use_time,
@@ -790,11 +784,10 @@ class DatabaseManagerExtension:
             detail_intro_info, detail_additional_info,
             raw_data_id, last_sync_at, data_quality_score, processing_status
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
         ON CONFLICT (content_id) DO UPDATE SET
             region_code = EXCLUDED.region_code,
-            sigungu_code = EXCLUDED.sigungu_code,
             facility_name = EXCLUDED.facility_name,
             category_code = EXCLUDED.category_code,
             sub_category_code = EXCLUDED.sub_category_code,
@@ -833,7 +826,6 @@ class DatabaseManagerExtension:
         params = (
             data.get("content_id"),
             data.get("region_code"),
-            data.get("sigungu_code"),
             data.get("facility_name"),
             data.get("category_code"),
             data.get("sub_category_code"),
@@ -861,8 +853,8 @@ class DatabaseManagerExtension:
             data.get("telname") or data.get("tel_name"),
             data.get("faxno") or data.get("fax_no"),
             data.get("mlevel") or data.get("map_level"),
-            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
-            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            json.dumps(data.get("detail_intro_info") or data.get("intro_info"), ensure_ascii=False) if data.get("detail_intro_info") or data.get("intro_info") else None,
+            json.dumps(data.get("detail_additional_info") or data.get("additional_info"), ensure_ascii=False) if data.get("detail_additional_info") or data.get("additional_info") else None,
             # 메타데이터 필드들
             data.get("raw_data_id"),
             data.get("last_sync_at"),
@@ -957,8 +949,8 @@ class DatabaseManagerExtension:
             data.get("telname") or data.get("tel_name"),
             data.get("faxno") or data.get("fax_no"),
             data.get("mlevel") or data.get("map_level"),
-            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
-            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            json.dumps(data.get("detail_intro_info") or data.get("intro_info"), ensure_ascii=False) if data.get("detail_intro_info") or data.get("intro_info") else None,
+            json.dumps(data.get("detail_additional_info") or data.get("additional_info"), ensure_ascii=False) if data.get("detail_additional_info") or data.get("additional_info") else None,
             # 메타데이터 필드들
             data.get("raw_data_id"),
             data.get("last_sync_at"),
@@ -1057,8 +1049,8 @@ class DatabaseManagerExtension:
             data.get("telname") or data.get("tel_name"),
             data.get("faxno") or data.get("fax_no"),
             data.get("mlevel") or data.get("map_level"),
-            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
-            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            json.dumps(data.get("detail_intro_info") or data.get("intro_info"), ensure_ascii=False) if data.get("detail_intro_info") or data.get("intro_info") else None,
+            json.dumps(data.get("detail_additional_info") or data.get("additional_info"), ensure_ascii=False) if data.get("detail_additional_info") or data.get("additional_info") else None,
             # 메타데이터 필드들
             data.get("raw_data_id"),
             data.get("last_sync_at"),
@@ -1078,7 +1070,7 @@ class DatabaseManagerExtension:
 
         query = """
         INSERT INTO shopping (
-            content_id, region_code, sigungu_code, shop_name, category_code, sub_category_code,
+            content_id, region_code, shop_name, category_code, sub_category_code,
             address, detail_address, latitude, longitude, zipcode, tel,
             homepage, overview, first_image, first_image_small,
             shop_type, opening_hours, rest_date, parking_info, credit_card, pet_allowed, baby_carriage, sale_item, fair_day,
@@ -1086,11 +1078,10 @@ class DatabaseManagerExtension:
             detail_intro_info, detail_additional_info,
             raw_data_id, last_sync_at, data_quality_score, processing_status
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
         ON CONFLICT (content_id) DO UPDATE SET
             region_code = EXCLUDED.region_code,
-            sigungu_code = EXCLUDED.sigungu_code,
             shop_name = EXCLUDED.shop_name,
             category_code = EXCLUDED.category_code,
             sub_category_code = EXCLUDED.sub_category_code,
@@ -1131,7 +1122,6 @@ class DatabaseManagerExtension:
         params = (
             data.get("content_id"),
             data.get("region_code"),
-            data.get("sigungu_code"),
             data.get("shop_name"),
             data.get("category_code"),
             data.get("sub_category_code"),
@@ -1161,8 +1151,8 @@ class DatabaseManagerExtension:
             data.get("telname") or data.get("tel_name"),
             data.get("faxno") or data.get("fax_no"),
             data.get("mlevel") or data.get("map_level"),
-            self.db_manager.serialize_for_db(data.get("detail_intro_info") or data.get("intro_info")),
-            self.db_manager.serialize_for_db(data.get("detail_additional_info") or data.get("additional_info")),
+            json.dumps(data.get("detail_intro_info") or data.get("intro_info"), ensure_ascii=False) if data.get("detail_intro_info") or data.get("intro_info") else None,
+            json.dumps(data.get("detail_additional_info") or data.get("additional_info"), ensure_ascii=False) if data.get("detail_additional_info") or data.get("additional_info") else None,
             # 메타데이터 필드들
             data.get("raw_data_id"),
             data.get("last_sync_at"),

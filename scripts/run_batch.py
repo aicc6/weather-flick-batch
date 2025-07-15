@@ -21,8 +21,6 @@ from app.schedulers.advanced_scheduler import (
     JobPriority,
     get_all_job_status,
 )
-from app.core.base_job import JobConfig
-from config.constants import JobType
 from app.core.logger import get_logger
 from config.settings import get_app_settings
 

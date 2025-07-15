@@ -4,7 +4,6 @@
 기존 KTO API 수집기를 새로운 통합 아키텍처로 마이그레이션
 """
 
-import os
 import logging
 import asyncio
 from datetime import datetime
@@ -20,7 +19,7 @@ from app.core.concurrent_api_manager import (
     APICallPriority, 
     ConcurrencyConfig
 )
-from app.core.selective_storage_manager import get_storage_manager, StorageRequest
+from app.core.selective_storage_manager import get_storage_manager
 from app.archiving.archival_engine import get_archival_engine
 from app.archiving.backup_manager import get_backup_manager
 

@@ -4,7 +4,6 @@
 UnifiedRegions를 Regions로 마이그레이션
 """
 
-import os
 import sys
 import logging
 from pathlib import Path

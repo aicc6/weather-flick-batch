@@ -6,7 +6,7 @@ API 원본 데이터의 아카이빙 및 백업 정책을 관리합니다.
 
 import logging
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 

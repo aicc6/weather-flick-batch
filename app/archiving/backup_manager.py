@@ -5,14 +5,12 @@ API 원본 데이터의 백업과 복구를 관리합니다.
 """
 
 import logging
-import os
-import shutil
 import gzip
 import bz2
 import lzma
 import json
 import hashlib
-from typing import Dict, Any, List, Optional, IO
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from pathlib import Path

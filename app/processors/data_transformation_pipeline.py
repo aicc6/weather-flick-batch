@@ -7,7 +7,7 @@
 import time
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Type
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
@@ -602,9 +602,9 @@ class KMADataTransformer(BaseDataTransformer):
         if "getUltraSrtNcst" in endpoint:
             return "current_weather"
         elif "getUltraSrtFcst" in endpoint or "getVilageFcst" in endpoint:
-            return "weather_forecasts"
+            return "weather_forecast"
         else:
-            return "weather_forecasts"  # 기본값
+            return "weather_forecast"  # 기본값
 
     def transform(self, endpoint: str, raw_response: Dict) -> List[Dict]:
         """KMA API 응답을 표준 형식으로 변환"""
@@ -619,7 +619,7 @@ class KMADataTransformer(BaseDataTransformer):
 
         if target_table == "current_weather":
             return self._transform_current_weather(items)
-        elif target_table == "weather_forecasts":
+        elif target_table == "weather_forecast":
             return self._transform_weather_forecast(items)
         else:
             raise ValueError(f"지원하지 않는 테이블: {target_table}")

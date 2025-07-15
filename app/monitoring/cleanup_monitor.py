@@ -7,7 +7,7 @@ TTL 기반 정리 작업의 성능과 상태를 모니터링하고 알림을 제
 import logging
 import time
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 from dataclasses import dataclass
 from enum import Enum
 

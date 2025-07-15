@@ -6,9 +6,8 @@
 
 import logging
 import asyncio
-import threading
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 from dataclasses import dataclass
 
 from app.monitoring.performance_monitor import get_performance_monitor, PerformanceMonitor

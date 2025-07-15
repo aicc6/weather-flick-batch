@@ -4,7 +4,6 @@ Weather Flick Batch API Server
 배치 작업을 관리하고 실행하기 위한 REST API 서버
 """
 
-import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routers import batch

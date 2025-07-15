@@ -5,7 +5,6 @@ API 응답 데이터를 백그라운드에서 비동기적으로 저장하여
 메인 로직의 성능 영향을 최소화하는 시스템입니다.
 """
 
-import asyncio
 import logging
 import time
 import threading

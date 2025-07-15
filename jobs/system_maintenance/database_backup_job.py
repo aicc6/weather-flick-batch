@@ -154,7 +154,7 @@ class DatabaseBackupJob(BaseJob):
         """중요 테이블별 백업 생성"""
         important_tables = [
             "historical_weather_daily",
-            "weather_forecasts",
+            "weather_forecast",
             "tourist_attractions",
             "travel_weather_scores",
             "regions",

@@ -6,15 +6,15 @@
 """
 
 import logging
-from typing import Dict, Any, List, Optional, Union, Type
+from typing import Dict, Any, List, Optional
 from datetime import datetime
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import contextmanager
 
 from app.core.database_manager_extension import get_extended_database_manager
 from app.core.orm_integration import (
     get_orm_manager, get_tourism_manager, get_query_builder,
     ORMDatabaseManager, TourismDataManager, HybridQueryBuilder,
-    is_orm_available, execute_orm_query
+    is_orm_available
 )
 
 logger = logging.getLogger(__name__)

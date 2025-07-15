@@ -6,7 +6,7 @@ Firebase Cloud Messaging을 통한 푸시 알림 전송 기능을 제공합니�
 
 import json
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 
 import firebase_admin

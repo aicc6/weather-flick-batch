@@ -50,7 +50,7 @@ def test_multi_key_system():
     """다중 API 키 시스템 테스트"""
     print("🔧 다중 API 키 시스템 테스트")
 
-    from app.core.multi_api_key_manager import get_api_key_manager, APIProvider
+    from app.core.multi_api_key_manager import get_api_key_manager
     from app.core.base_api_client import KTOAPIClient
 
     # 키 매니저 상태

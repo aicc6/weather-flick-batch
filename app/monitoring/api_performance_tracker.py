@@ -6,8 +6,7 @@ API 성능 추적 시스템
 
 import logging
 import time
-import asyncio
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from collections import defaultdict, deque
@@ -15,7 +14,6 @@ from enum import Enum
 import statistics
 import threading
 
-from app.core.multi_api_key_manager import APIProvider
 
 logger = logging.getLogger(__name__)
 

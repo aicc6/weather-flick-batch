@@ -10,8 +10,7 @@
 import math
 import logging
 import json
-from typing import Dict, List, Optional, Tuple, Any
-from decimal import Decimal
+from typing import Dict, Optional, Tuple, Any
 from datetime import datetime
 
 from app.core.database_manager import get_db_manager

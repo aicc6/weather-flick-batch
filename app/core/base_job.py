@@ -190,7 +190,7 @@ class BaseJob(ABC):
     def _send_failure_alert(self, exception: Exception, result: JobResult):
         """작업 실패 알림 전송"""
         try:
-            from utils.notification import get_notification_manager, AlertLevel
+            from utils.notification import get_notification_manager
 
             notification_manager = get_notification_manager()
 

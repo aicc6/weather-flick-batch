@@ -11,16 +11,15 @@ Redis 캐시의 성능을 실시간으로 모니터링하고 분석하는 모듈
 
 import asyncio
 import json
-import time
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, NamedTuple
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
-from collections import deque, defaultdict
+from collections import deque
 from enum import Enum
 
 from utils.redis_client import RedisClient
-from app.core.advanced_cache_manager import get_advanced_cache_manager, CacheMetrics
+from app.core.advanced_cache_manager import get_advanced_cache_manager
 
 
 class AlertLevel(Enum):

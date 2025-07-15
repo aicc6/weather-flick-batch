@@ -2,7 +2,6 @@
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta, date
 import json
-import asyncio
 from uuid import UUID
 
 from app.core.base_job import BaseJob
@@ -254,7 +253,7 @@ class WeatherChangeNotificationJob(BaseJob):
                 rain_probability,
                 weather_description as weather_condition,
                 wind_speed
-            FROM weather_forecasts
+            FROM weather_forecast
             WHERE region_code = %s
               AND forecast_date >= %s
               AND forecast_date < %s

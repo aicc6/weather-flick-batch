@@ -8,12 +8,10 @@ API별, 데이터 타입별, 사용 패턴별로 최적화된 TTL을 동적으�
 - 자동 TTL 튜닝 시스템
 """
 
-import asyncio
 import json
 import logging
-import time
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Tuple
+from datetime import datetime
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
 from enum import Enum
 from collections import defaultdict, deque

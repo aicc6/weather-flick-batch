@@ -6,10 +6,8 @@ API 매핑과 좌표 변환 정보를 관리합니다.
 """
 
 import logging
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, Any, Tuple
 from datetime import datetime
-import json
-import math
 
 from app.core.unified_api_client import get_unified_api_client, APIProvider
 from app.core.database_manager import get_db_manager

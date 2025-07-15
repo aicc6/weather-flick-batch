@@ -4,7 +4,7 @@ API 원본 데이터 저장 정책 설정
 각 API 제공자별로 저장 정책을 정의하고 관리합니다.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 from dataclasses import dataclass
 from enum import Enum
 

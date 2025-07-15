@@ -11,11 +11,9 @@
 
 import asyncio
 from datetime import datetime
-from typing import Dict, List, Any, Optional, Tuple, Union
-from contextlib import asynccontextmanager
+from typing import Dict, List, Any, Tuple
 from dataclasses import dataclass
 import psycopg2.extras
-import logging
 
 from app.core.database_manager import DatabaseManager
 from app.core.logger import get_logger
@@ -135,7 +133,7 @@ class BatchInsertOptimizer:
             
             # INSERT 쿼리 (예보 데이터는 일반적으로 중복되지 않음)
             query = """
-                INSERT INTO weather_forecasts (
+                INSERT INTO weather_forecast (
                     region_code, nx, ny, forecast_date, forecast_time, 
                     temperature, min_temp, max_temp, weather_condition, 
                     forecast_type, raw_data_id, created_at

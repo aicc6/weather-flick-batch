@@ -7,7 +7,7 @@ KTO API 키의 상태를 확인하고 문제가 있는 키를 관리하는 도�
 import logging
 import asyncio
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from app.core.multi_api_key_manager import get_api_key_manager, APIProvider
 from app.core.unified_api_client import get_unified_api_client
@@ -374,7 +374,7 @@ async def main():
     if len(sys.argv) > 1 and sys.argv[1] == "health":
         # 건강 상태 점검
         results = await monitor.check_all_keys_health(APIProvider.KTO)
-        print(f"\n🔍 KTO API 키 건강 상태 점검 결과:")
+        print("\n🔍 KTO API 키 건강 상태 점검 결과:")
         print(f"건강한 키: {results['healthy_keys']}/{results['total_keys']}개")
         
         if results['recommendations']:
@@ -385,7 +385,7 @@ async def main():
     elif len(sys.argv) > 1 and sys.argv[1] == "recover":
         # 키 복구 시도
         results = await monitor.attempt_key_recovery(APIProvider.KTO)
-        print(f"\n🔄 KTO API 키 복구 시도 결과:")
+        print("\n🔄 KTO API 키 복구 시도 결과:")
         print(f"복구됨: {results['recovered_keys']}/{results['attempted_keys']}개")
     
     else:

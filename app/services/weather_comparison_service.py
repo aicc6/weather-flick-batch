@@ -1,8 +1,7 @@
 """날씨 변경 감지 및 비교 서비스"""
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Optional, Any
 from datetime import datetime, date
 from dataclasses import dataclass
-import json
 from app.core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -311,10 +310,10 @@ class WeatherComparisonService:
         # 본문 생성
         body_parts = [
             f"안녕하세요, {plan_info['user_name']}님!",
-            f"",
+            "",
             f"{plan_info['start_date']} ~ {plan_info['end_date']} 일정의",
             f"{plan_info['destination']} 여행 날씨에 변화가 있습니다.",
-            f"",
+            "",
             "📋 주요 변경사항:"
         ]
         

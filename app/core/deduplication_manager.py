@@ -4,11 +4,9 @@
 """
 
 import logging
-import hashlib
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, Optional, Tuple, Any
 from dataclasses import dataclass
 from datetime import datetime
-import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from ..core.database_connection_pool import DatabaseConnectionPool
@@ -219,7 +217,7 @@ class DeduplicationManager:
                     values.append(region_id)
                     
                     query = f"""
-                        UPDATE unified_regions 
+                        UPDATE regions 
                         SET {', '.join(updates)}
                         WHERE region_id = %s
                     """
@@ -236,7 +234,7 @@ class DeduplicationManager:
         with self.connection_pool.get_sync_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute("""
-                    INSERT INTO unified_regions (
+                    INSERT INTO regions (
                         region_code, region_name, region_name_full, region_name_en,
                         region_level, center_latitude, center_longitude,
                         administrative_code, is_active, created_at, updated_at

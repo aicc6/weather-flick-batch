@@ -5,7 +5,6 @@
 """
 
 import logging
-import asyncio
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field
@@ -14,7 +13,7 @@ import json
 
 from .data_validator import DataValidator, ValidationResult, ValidationSeverity
 from .duplicate_detector import DuplicateDetector, DuplicateConfig, DuplicateResult, DuplicateStrategy
-from .data_cleaner import DataCleaner, AutoFixResult, CleaningResult
+from .data_cleaner import DataCleaner, AutoFixResult
 
 
 class QualityAction(Enum):

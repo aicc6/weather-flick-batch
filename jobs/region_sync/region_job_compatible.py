@@ -7,7 +7,6 @@
 import asyncio
 import logging
 from typing import Dict, Any
-from datetime import datetime
 
 from app.core.base_job import BaseJob
 from app.services.region_service_compatible import get_region_service_compatible
@@ -120,7 +119,6 @@ async def run_region_job_compatible():
 
 
 if __name__ == "__main__":
-    import json
     
     logging.basicConfig(
         level=logging.INFO,
@@ -133,7 +131,7 @@ if __name__ == "__main__":
         try:
             result = await run_region_job_compatible()
             
-            print(f"\n✅ 배치 작업 완료")
+            print("\n✅ 배치 작업 완료")
             print(f"전체 상태: {result['overall_status']}")
             
             # 결과 상세 출력
@@ -154,7 +152,7 @@ if __name__ == "__main__":
             
             if result.get('statistics'):
                 stats = result['statistics']
-                print(f"\n지역 통계:")
+                print("\n지역 통계:")
                 print(f"- 전체 지역: {stats.get('total_regions', 0)}")
                 print(f"- 레벨별: {stats.get('by_level', {})}")
                 print(f"- API 매핑: {stats.get('by_api', {})}")

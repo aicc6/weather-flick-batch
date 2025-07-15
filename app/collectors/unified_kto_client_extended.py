@@ -6,7 +6,7 @@
 
 import asyncio
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from app.collectors.unified_kto_client import UnifiedKTOClient
 from app.core.multi_api_key_manager import APIProvider

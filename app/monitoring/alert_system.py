@@ -5,7 +5,6 @@
 """
 
 import logging
-import json
 import smtplib
 import os
 from typing import Dict, Any, List, Optional, Callable
@@ -16,7 +15,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import requests
 
-from app.monitoring.performance_monitor import PerformanceAlert, PerformanceMetricType
+from app.monitoring.performance_monitor import PerformanceAlert
 
 logger = logging.getLogger(__name__)
 

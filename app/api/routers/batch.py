@@ -11,10 +11,8 @@ import logging
 from app.api.schemas import (
     JobType, JobStatus, JobExecuteRequest, JobExecuteResponse,
     JobInfo, JobListResponse, JobLogsResponse, JobStatistics,
-    SystemStatus, JobStopRequest, ErrorResponse
+    SystemStatus, JobStopRequest
 )
-from app.api.services.job_manager import JobManager
-from app.api.services.simple_job_manager import SimpleJobManager
 from app.api.config import settings
 
 logger = logging.getLogger(__name__)

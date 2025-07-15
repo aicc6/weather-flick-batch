@@ -9,13 +9,13 @@ import sys
 import os
 import time
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from datetime import datetime
+from typing import Dict, Any
 
 # 프로젝트 루트 경로 추가
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from app.core.ttl_policy_engine import get_ttl_engine, CleanupPriority
+from app.core.ttl_policy_engine import get_ttl_engine
 from config.api_storage_policy import GLOBAL_STORAGE_CONFIG
 
 logger = logging.getLogger(__name__)

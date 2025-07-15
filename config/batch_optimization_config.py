@@ -87,8 +87,8 @@ class BatchOptimizationConfig:
             conflict_columns=["region_code", "observed_at"]
         ),
         
-        "weather_forecasts": TableSpecificConfig(
-            table_name="weather_forecasts",
+        "weather_forecast": TableSpecificConfig(
+            table_name="weather_forecast",
             batch_size=1500,
             max_memory_mb=120,
             transaction_timeout=60,
@@ -286,7 +286,7 @@ class BatchOptimizationConfig:
         # 테이블별 추가 검증
         if table_name:
             # 대용량 테이블의 경우 최소 배치 크기 권장
-            high_volume_tables = ["weather_forecasts", "historical_weather_daily", "restaurants"]
+            high_volume_tables = ["weather_forecast", "historical_weather_daily", "restaurants"]
             if table_name in high_volume_tables and config.batch_size < 500:
                 return False
         
@@ -295,7 +295,7 @@ class BatchOptimizationConfig:
 
 # 편의 함수들
 def get_weather_batch_config(
-    table_name: str = "weather_forecasts",
+    table_name: str = "weather_forecast",
     optimization_level: BatchOptimizationLevel = None
 ) -> BatchConfig:
     """날씨 데이터용 배치 설정"""

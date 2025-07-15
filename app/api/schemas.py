@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from enum import Enum
-import uuid
 
 class JobType(str, Enum):
     """배치 작업 유형"""
@@ -57,9 +56,11 @@ class JobInfo(BaseModel):
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
     error_message: Optional[str] = None
     result_summary: Optional[Dict[str, Any]] = None
     parameters: Dict[str, Any] = Field(default_factory=dict)
+    message: Optional[str] = None
 
 class JobListResponse(BaseModel):
     """작업 목록 응답"""
@@ -67,6 +68,7 @@ class JobListResponse(BaseModel):
     total: int
     page: int
     size: int
+    total_pages: int = Field(default=1)
 
 class JobExecuteResponse(BaseModel):
     """작업 실행 응답"""

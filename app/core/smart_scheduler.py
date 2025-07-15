@@ -6,12 +6,11 @@ API 한도 초과 시 다른 API를 우선 실행하는 지능형 스케줄링 �
 
 import time
 import threading
-from typing import Dict, List, Optional, Callable
+from typing import Dict, Optional, Callable
 from datetime import datetime, timedelta
 from enum import Enum
 from dataclasses import dataclass
 from queue import PriorityQueue
-import logging
 
 from app.core.logger import get_logger
 

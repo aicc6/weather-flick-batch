@@ -5,21 +5,18 @@ Weather Flick 배치 시스템의 모든 구성 요소를 실시간으로 모니
 문제 발생 시 즉시 알림을 보내는 중앙집중식 모니터링 시스템입니다.
 """
 
-import asyncio
 import logging
 import threading
 import time
 import json
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Callable
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
 from enum import Enum
 import psutil
-from contextlib import contextmanager
 
 from app.core.multi_api_key_manager import get_api_key_manager
 from app.core.database_connection_pool import get_connection_pool
-from app.core.memory_optimizer import get_memory_optimizer
 
 
 class AlertLevel(Enum):

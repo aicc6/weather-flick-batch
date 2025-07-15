@@ -16,12 +16,11 @@ import json
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Callable, Set
+from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass, asdict
 from enum import Enum
-from collections import defaultdict, deque
+from collections import deque
 
-import psycopg2
 from utils.redis_client import RedisClient
 from app.core.database_manager import DatabaseManager
 

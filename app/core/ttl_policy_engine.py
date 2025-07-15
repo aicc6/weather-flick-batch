@@ -5,12 +5,11 @@ TTL (Time To Live) 정책 엔진
 """
 
 import logging
-from typing import Dict, Any, List, Optional, Tuple
-from datetime import datetime, timedelta
+from typing import Dict, Any, List, Optional
+from datetime import datetime
 from dataclasses import dataclass
 from enum import Enum
 
-from config.api_storage_policy import get_ttl_days, get_priority, API_STORAGE_POLICIES
 from .database_manager import DatabaseManager
 from .database_manager_extension import extend_database_manager
 

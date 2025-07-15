@@ -263,24 +263,24 @@ class DataPriorityManager:
         # 현재 데이터 현황
         priority_list = self.get_priority_sorted_content_types(content_types)
         
-        print(f"\n🎯 컨텐츠 타입별 우선순위 (데이터 부족 순):")
+        print("\n🎯 컨텐츠 타입별 우선순위 (데이터 부족 순):")
         for rank, (content_type, count, name) in enumerate(priority_list, 1):
             urgency = "🔥 긴급" if count == 0 else "⚠️ 부족" if count < 1000 else "✅ 충분"
             print(f"  {rank}. {name} (타입 {content_type}): {count:,}개 - {urgency}")
         
         # 상위 3개 컨텐츠 타입의 상세 분석
-        print(f"\n🔍 상위 3개 우선순위 상세 분석:")
+        print("\n🔍 상위 3개 우선순위 상세 분석:")
         for content_type, count, name in priority_list[:3]:
             print(f"\n📋 {name} (타입 {content_type}) - 현재 {count:,}개:")
             
             area_priorities = self.get_area_priority_by_content_type(content_type)
             if area_priorities:
-                print(f"  지역별 현황 (상위 5개):")
+                print("  지역별 현황 (상위 5개):")
                 for area_code, area_count in area_priorities[:5]:
                     area_name = self._get_area_name(area_code)
                     print(f"    - {area_name}: {area_count:,}개")
             else:
-                print(f"  ⚠️ 지역별 데이터 없음 또는 조회 실패")
+                print("  ⚠️ 지역별 데이터 없음 또는 조회 실패")
 
 
 # 전역 인스턴스

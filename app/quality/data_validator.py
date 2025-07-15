@@ -7,7 +7,7 @@
 import re
 import logging
 from datetime import datetime, date
-from typing import Dict, List, Any, Optional, Callable, Union
+from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 import json

@@ -248,38 +248,44 @@ class WeatherUpdateJob:
     ):
         """현재 날씨 정보 저장"""
         try:
+            # 날짜 추출
+            weather_date = weather_data["recorded_at"].date()
+            
             query = """
-            INSERT INTO current_weather (
-                region_code, temperature, humidity, precipitation,
-                wind_speed, wind_direction, atmospheric_pressure,
-                weather_condition, visibility, observed_at
+            INSERT INTO weather_current (
+                region_code, weather_date, year, month, day,
+                avg_temp, max_temp, min_temp, humidity, precipitation,
+                wind_speed, weather_condition, visibility, uv_index
             ) VALUES (
-                %s, %s, %s, 0,
-                %s, %s, %s,
-                %s, %s, %s
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s
             )
-            ON CONFLICT ON CONSTRAINT unique_current_weather_region_time
+            ON CONFLICT (region_code, weather_date) 
             DO UPDATE SET
-                temperature = EXCLUDED.temperature,
+                avg_temp = EXCLUDED.avg_temp,
                 humidity = EXCLUDED.humidity,
                 wind_speed = EXCLUDED.wind_speed,
-                wind_direction = EXCLUDED.wind_direction,
-                atmospheric_pressure = EXCLUDED.atmospheric_pressure,
                 weather_condition = EXCLUDED.weather_condition,
                 visibility = EXCLUDED.visibility,
-                observed_at = EXCLUDED.observed_at
+                uv_index = EXCLUDED.uv_index
             """
 
             params = (
                 region_code,
-                weather_data["temperature"],
+                weather_date,
+                weather_date.year,
+                weather_date.month,
+                weather_date.day,
+                weather_data["temperature"],  # avg_temp
+                weather_data["temperature"],  # max_temp (현재 날씨는 평균=최대=최소)
+                weather_data["temperature"],  # min_temp
                 weather_data["humidity"],
+                0,  # precipitation (나중에 업데이트)
                 weather_data["wind_speed"],
-                weather_data["wind_direction"],
-                weather_data["pressure"],
                 weather_data["weather_description"],
                 weather_data["visibility"],
-                weather_data["recorded_at"],
+                weather_data.get("uv_index", 0),
             )
             self.db_manager.execute_update(query, params)
 
@@ -292,30 +298,65 @@ class WeatherUpdateJob:
     ) -> int:
         """날씨 예보 정보 저장"""
         try:
+            # 날짜별로 그룹화하여 최소/최대 온도 계산
+            daily_forecasts = {}
+            for forecast in forecast_data:
+                forecast_date = forecast["forecast_time"].date()
+                if forecast_date not in daily_forecasts:
+                    daily_forecasts[forecast_date] = {
+                        "temps": [],
+                        "precipitations": [],
+                        "conditions": [],
+                    }
+                daily_forecasts[forecast_date]["temps"].append(forecast["temperature"])
+                daily_forecasts[forecast_date]["precipitations"].append(
+                    forecast["precipitation_probability"]
+                )
+                daily_forecasts[forecast_date]["conditions"].append(
+                    forecast["weather_description"]
+                )
+
             # 새 예보 데이터 저장
             insert_query = """
-            INSERT INTO weather_forecasts (
-                region_code, nx, ny, forecast_date, forecast_time, forecast_type, min_temp, max_temp,
-                precipitation_prob, weather_condition, created_at
+            INSERT INTO weather_forecast (
+                region_code, forecast_date, forecast_type, min_temp, max_temp,
+                precipitation_prob, weather_condition, forecast_issued_at
             ) VALUES (
-                %s, %s, %s, %s, '1200', 'short',
-                %s, %s, %s,
-                %s, NOW()
+                %s, %s, %s, %s, %s,
+                %s, %s, %s
             )
+            ON CONFLICT (region_code, forecast_date) 
+            DO UPDATE SET
+                min_temp = EXCLUDED.min_temp,
+                max_temp = EXCLUDED.max_temp,
+                precipitation_prob = EXCLUDED.precipitation_prob,
+                weather_condition = EXCLUDED.weather_condition,
+                forecast_issued_at = EXCLUDED.forecast_issued_at
             """
 
             count = 0
-            for forecast in forecast_data:
-                forecast_date = forecast["forecast_time"].date()
+            for forecast_date, data in daily_forecasts.items():
+                # 일별 최소/최대 온도 계산
+                min_temp = min(data["temps"])
+                max_temp = max(data["temps"])
+                # 평균 강수 확률
+                avg_precipitation = sum(data["precipitations"]) / len(
+                    data["precipitations"]
+                )
+                # 가장 자주 나타나는 날씨 상태
+                most_common_condition = max(
+                    set(data["conditions"]), key=data["conditions"].count
+                )
+
                 params = (
                     region_code,
-                    forecast.get("nx", 60),  # 기본값 설정 (서울 기준)
-                    forecast.get("ny", 127),  # 기본값 설정 (서울 기준)
                     forecast_date,
-                    forecast["temp_min"],
-                    forecast["temp_max"],
-                    forecast["precipitation_probability"],
-                    forecast["weather_description"],
+                    "short",  # forecast_type
+                    min_temp,
+                    max_temp,
+                    avg_precipitation,
+                    most_common_condition,
+                    datetime.now(),  # forecast_issued_at
                 )
                 self.db_manager.execute_update(insert_query, params)
                 count += 1

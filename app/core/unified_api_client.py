@@ -8,11 +8,9 @@ import os
 import time
 import hashlib
 import logging
-import asyncio
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, Optional, Any, Union
 from dataclasses import dataclass
-from enum import Enum
 
 import aiohttp
 import json
@@ -570,7 +568,7 @@ class UnifiedAPIClient:
                         duration_ms,
                         api_key,
                     )
-                except:
+                except Exception:
                     pass  # 오류 저장 실패는 무시
 
             return APIResponse.error_response(error_details)

@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 from app.api.schemas import (
     JobType, JobStatus, JobInfo, JobListResponse,
-    JobLogsResponse, JobLog, JobStatistics, SystemStatus, LogLevel
+    JobLogsResponse, JobStatistics, SystemStatus
 )
 
 logger = logging.getLogger(__name__)
@@ -60,11 +60,20 @@ class SimpleJobManager:
                 continue
             filtered_jobs.append(job)
         
+        # 페이지네이션 적용
+        start_idx = (page - 1) * size
+        end_idx = start_idx + size
+        paginated_jobs = filtered_jobs[start_idx:end_idx]
+        
+        # 전체 페이지 수 계산
+        total_pages = (len(filtered_jobs) + size - 1) // size if len(filtered_jobs) > 0 else 1
+        
         return JobListResponse(
-            jobs=filtered_jobs,
+            jobs=paginated_jobs,
             total=len(filtered_jobs),
             page=page,
-            size=size
+            size=size,
+            total_pages=total_pages
         )
     
     async def is_job_running(self, job_type: JobType) -> bool:

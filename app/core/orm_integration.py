@@ -8,13 +8,13 @@ weather-flick-back의 모델 구조를 재사용하면서 배치 시스템에 �
 import sys
 import os
 import logging
-from typing import Optional, Dict, Any, List, Type, Union
+from typing import Optional, Dict, Any, List, Type
 from datetime import datetime
 from contextlib import asynccontextmanager, contextmanager
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import sessionmaker, Session, declarative_base
+from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import QueuePool
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ if os.path.exists(back_project_path):
         del sys.modules['app.models']
     
     sys.path.insert(0, back_project_path)
-    logger.info(f"백엔드 프로젝트 경로가 sys.path에 추가되었습니다")
+    logger.info("백엔드 프로젝트 경로가 sys.path에 추가되었습니다")
 
 # Base 클래스 정의 (weather-flick-back과 호환)
 Base = declarative_base()
@@ -51,7 +51,7 @@ try:
     from app.models import (
         TouristAttraction, CulturalFacility, FestivalEvent,
         Restaurant, Accommodation, Shopping, PetTourInfo,
-        WeatherData, Region, UnifiedRegion,
+        WeatherData, Region,
         User, Admin, Role
     )
     MODELS_AVAILABLE = True
@@ -69,7 +69,6 @@ except ImportError as e:
     PetTourInfo = None
     WeatherData = None
     Region = None
-    UnifiedRegion = None
 
 
 class ORMDatabaseManager:

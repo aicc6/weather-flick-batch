@@ -4,7 +4,6 @@
 배치 작업의 실행 상태, 성능, 성공/실패를 추적하고 모니터링합니다.
 """
 
-import time
 import logging
 import threading
 from datetime import datetime, timedelta
@@ -14,7 +13,7 @@ from enum import Enum
 from contextlib import contextmanager
 import uuid
 
-from .monitoring_system import Alert, AlertLevel, ComponentType, AlertManager
+from .monitoring_system import AlertLevel, ComponentType, AlertManager
 
 
 class JobStatus(Enum):

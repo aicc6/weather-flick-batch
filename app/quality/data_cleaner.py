@@ -9,8 +9,7 @@ import logging
 from typing import Dict, List, Any, Optional, Callable, Union
 from dataclasses import dataclass, field
 from enum import Enum
-from datetime import datetime, date
-import json
+from datetime import datetime
 
 
 class CleaningAction(Enum):
