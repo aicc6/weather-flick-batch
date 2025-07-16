@@ -2100,3 +2100,485 @@ class CustomTravelRecommendationResponse(BaseModel):
     total_places: int = Field(..., description="총 추천 장소 수")
     recommendation_type: str = Field(..., description="추천 유형")
     created_at: datetime = Field(default_factory=lambda: datetime.now())
+
+
+# ===========================================
+# 데이터베이스에만 존재하는 누락된 테이블 모델들
+# ===========================================
+
+
+class Accommodation(Base):
+    """
+    숙박시설 정보 테이블
+    사용처: weather-flick-batch
+    설명: 한국관광공사 API 기반 숙박시설 정보 수집용
+    """
+
+    __tablename__ = "accommodations"
+
+    # Primary Key
+    content_id = Column(String(20), primary_key=True, index=True)
+
+    # Foreign Keys
+    region_code = Column(String, ForeignKey("regions.region_code"), nullable=False, index=True)
+    raw_data_id = Column(UUID(as_uuid=True), index=True)
+
+    # 기본 정보
+    accommodation_name = Column(String, nullable=False)
+    accommodation_type = Column(String, nullable=False)
+    address = Column(String, nullable=False)
+    tel = Column(String)
+
+    # 위치 정보
+    latitude = Column(Float)
+    longitude = Column(Float)
+
+    # 카테고리 정보
+    category_code = Column(String(10))
+    sub_category_code = Column(String(10))
+
+    # 시설 정보
+    parking = Column(String)
+
+    # 메타데이터
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class Transportation(Base):
+    """
+    교통수단 정보 테이블
+    사용처: weather-flick-batch
+    설명: 대중교통 및 교통수단 정보 수집
+    """
+
+    __tablename__ = "transportation"
+
+    transport_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    region_code = Column(String, ForeignKey("regions.region_code"), nullable=False, index=True)
+
+    # 교통수단 정보
+    transport_type = Column(String, nullable=False)  # bus, subway, train 등
+    transport_name = Column(String, nullable=False)
+    route_number = Column(String)
+
+    # 운행 정보
+    operating_hours = Column(String)
+    frequency = Column(String)  # 운행 간격
+    fare = Column(String)
+
+    # 노선 정보
+    start_point = Column(String)
+    end_point = Column(String)
+    route_description = Column(Text)
+
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class CategoryCode(Base):
+    """
+    카테고리 코드 테이블
+    사용처: weather-flick-batch
+    설명: 한국관광공사 카테고리 코드 수집 및 관리
+    """
+
+    __tablename__ = "category_codes"
+
+    category_id = Column(Integer, primary_key=True, index=True)
+    category_code = Column(String(10), unique=True, nullable=False)
+    category_name = Column(String, nullable=False)
+    parent_category_code = Column(String(10))
+    level = Column(Integer, default=1)  # 카테고리 레벨
+    description = Column(Text)
+    is_active = Column(Boolean, default=True)
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class DataCollectionLog(Base):
+    """
+    데이터 수집 로그 테이블
+    사용처: weather-flick-batch
+    설명: 외부 API 데이터 수집 상세 로그
+    """
+
+    __tablename__ = "data_collection_logs"
+
+    log_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    collection_type = Column(String, nullable=False)  # tourist_attraction, weather 등
+
+    # 수집 정보
+    api_endpoint = Column(String, nullable=False)
+    request_params = Column(JSONB)
+    response_status = Column(Integer)
+    response_time = Column(Float)  # 응답 시간 (초)
+
+    # 결과
+    records_collected = Column(Integer, default=0)
+    records_processed = Column(Integer, default=0)
+    records_failed = Column(Integer, default=0)
+
+    # 에러 정보
+    error_message = Column(Text)
+    error_details = Column(JSONB)
+
+    started_at = Column(DateTime, nullable=False)
+    completed_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+
+    # 인덱스
+    __table_args__ = (
+        Index("idx_collection_log_type_started", "collection_type", "started_at"),
+    )
+
+
+class ApiKey(Base):
+    """
+    API 키 관리 테이블
+    사용처: weather-flick-batch
+    설명: 외부 API 키 로테이션 및 사용량 관리
+    """
+
+    __tablename__ = "api_keys"
+
+    key_id = Column(Integer, primary_key=True, index=True)
+    service_name = Column(String, nullable=False)  # tour_api, weather_api 등
+    api_key = Column(String, nullable=False)
+    key_alias = Column(String)  # 키 별칭
+
+    # 사용량 제한
+    daily_limit = Column(Integer)
+    monthly_limit = Column(Integer)
+
+    # 현재 사용량
+    daily_usage = Column(Integer, default=0)
+    monthly_usage = Column(Integer, default=0)
+    last_used_at = Column(DateTime)
+    usage_reset_at = Column(DateTime)
+
+    # 상태
+    is_active = Column(Boolean, default=True)
+    error_count = Column(Integer, default=0)
+    last_error_at = Column(DateTime)
+    last_error_message = Column(Text)
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # 유니크 제약조건
+    __table_args__ = (
+        UniqueConstraint("service_name", "api_key", name="uq_service_api_key"),
+        Index("idx_api_key_service", "service_name", "is_active"),
+    )
+
+
+class BatchJob(Base):
+    """
+    배치 작업 정의 테이블
+    사용처: weather-flick-batch
+    설명: 정기적으로 실행되는 배치 작업 정의 및 스케줄링
+    """
+
+    __tablename__ = "batch_jobs"
+
+    job_id = Column(Integer, primary_key=True, index=True)
+    job_name = Column(String, unique=True, nullable=False)
+    job_type = Column(String, nullable=False)  # data_collection, data_processing 등
+    description = Column(Text)
+
+    # 실행 설정
+    is_active = Column(Boolean, default=True)
+    schedule_cron = Column(String)  # 크론 표현식
+    timeout_minutes = Column(Integer, default=60)
+    retry_count = Column(Integer, default=3)
+
+    # 마지막 실행 정보
+    last_run_at = Column(DateTime)
+    last_success_at = Column(DateTime)
+    last_failure_at = Column(DateTime)
+    last_error_message = Column(Text)
+
+    # 실행 통계
+    total_runs = Column(Integer, default=0)
+    successful_runs = Column(Integer, default=0)
+    failed_runs = Column(Integer, default=0)
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class BatchJobSchedule(Base):
+    """
+    배치 작업 스케줄 테이블
+    사용처: weather-flick-batch
+    설명: 배치 작업의 실행 스케줄 관리
+    """
+
+    __tablename__ = "batch_job_schedules"
+
+    schedule_id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("batch_jobs.job_id"), nullable=False)
+
+    # 스케줄 정보
+    scheduled_time = Column(DateTime, nullable=False, index=True)
+    priority = Column(Integer, default=5)  # 1-10, 높을수록 우선순위 높음
+
+    # 실행 상태
+    status = Column(String, default="pending")  # pending, running, completed, failed, cancelled
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+
+    # 실행 결과
+    result_summary = Column(JSONB)
+    error_message = Column(Text)
+
+    created_at = Column(DateTime, server_default=func.now())
+
+    # 인덱스
+    __table_args__ = (
+        Index("idx_schedule_status_time", "status", "scheduled_time"),
+        Index("idx_schedule_job", "job_id"),
+    )
+
+
+class DataSyncStatus(Base):
+    """
+    데이터 동기화 상태 테이블
+    사용처: weather-flick-batch
+    설명: 외부 데이터 소스와의 동기화 상태 추적
+    """
+
+    __tablename__ = "data_sync_status"
+
+    sync_id = Column(Integer, primary_key=True, index=True)
+    data_source = Column(String, nullable=False)  # tour_api, weather_api 등
+    sync_type = Column(String, nullable=False)  # full, incremental
+
+    # 동기화 범위
+    sync_target = Column(String)  # regions, attractions 등
+    sync_filter = Column(JSONB)  # 동기화 필터 조건
+
+    # 진행 상태
+    status = Column(String, default="pending")  # pending, running, completed, failed
+    progress_percent = Column(Float, default=0)
+    current_page = Column(Integer)
+    total_pages = Column(Integer)
+
+    # 결과
+    records_fetched = Column(Integer, default=0)
+    records_created = Column(Integer, default=0)
+    records_updated = Column(Integer, default=0)
+    records_deleted = Column(Integer, default=0)
+    records_failed = Column(Integer, default=0)
+
+    # 시간 정보
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    next_sync_at = Column(DateTime)
+
+    # 에러 정보
+    error_message = Column(Text)
+    error_details = Column(JSONB)
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # 유니크 제약조건
+    __table_args__ = (
+        UniqueConstraint("data_source", "sync_type", "sync_target", name="uq_sync_source_type_target"),
+    )
+
+
+class ErrorLog(Base):
+    """
+    에러 로그 테이블
+    사용처: weather-flick-batch
+    설명: 배치 시스템 전체 에러 로그
+    """
+
+    __tablename__ = "error_logs"
+
+    error_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    service_name = Column(String, nullable=False)  # weather-flick-batch
+    error_type = Column(String, nullable=False)  # database, api, validation 등
+    error_level = Column(String, nullable=False)  # error, warning, critical
+
+    # 에러 정보
+    error_message = Column(Text, nullable=False)
+    error_trace = Column(Text)  # 스택 트레이스
+    error_data = Column(JSONB)  # 추가 컨텍스트 데이터
+
+    # 배치 작업 정보
+    job_id = Column(Integer)
+    batch_operation = Column(String)
+
+    created_at = Column(DateTime, server_default=func.now())
+
+    # 인덱스
+    __table_args__ = (
+        Index("idx_error_service_created", "service_name", "created_at"),
+        Index("idx_error_type_level", "error_type", "error_level"),
+    )
+
+
+class EventLog(Base):
+    """
+    이벤트 로그 테이블
+    사용처: weather-flick-batch
+    설명: 중요 배치 시스템 이벤트 로그
+    """
+
+    __tablename__ = "event_logs"
+
+    event_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    service_name = Column(String, nullable=False)
+    event_type = Column(String, nullable=False)  # batch_start, batch_complete, data_sync 등
+    event_name = Column(String, nullable=False)  # 구체적인 이벤트명
+
+    # 이벤트 정보
+    event_data = Column(JSONB)
+
+    # 배치 작업 정보
+    job_id = Column(Integer)
+
+    created_at = Column(DateTime, server_default=func.now())
+
+    # 인덱스
+    __table_args__ = (
+        Index("idx_event_service_type", "service_name", "event_type"),
+        Index("idx_event_created", "created_at"),
+    )
+
+
+class DataTransformationLog(Base):
+    """
+    데이터 변환 로그 테이블
+    사용처: weather-flick-batch
+    설명: 데이터 변환 작업 상세 로그
+    """
+
+    __tablename__ = "data_transformation_logs"
+
+    log_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    transformation_type = Column(String, nullable=False)  # api_to_db, data_cleaning 등
+    source_type = Column(String, nullable=False)
+    target_type = Column(String, nullable=False)
+
+    # 변환 정보
+    records_input = Column(Integer, default=0)
+    records_output = Column(Integer, default=0)
+    records_failed = Column(Integer, default=0)
+
+    # 실행 정보
+    started_at = Column(DateTime, nullable=False)
+    completed_at = Column(DateTime)
+    status = Column(String, default="running")  # running, completed, failed
+
+    # 에러 정보
+    error_message = Column(Text)
+    error_details = Column(JSONB)
+
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class TravelCourse(Base):
+    """
+    여행 코스 테이블
+    사용처: weather-flick-batch
+    설명: 한국관광공사 여행 코스 정보 수집
+    """
+
+    __tablename__ = "travel_courses"
+
+    content_id = Column(String(20), primary_key=True, index=True)
+    region_code = Column(String, ForeignKey("regions.region_code"), nullable=False, index=True)
+
+    # 기본 정보
+    course_name = Column(String, nullable=False)
+    course_theme = Column(String)
+    course_distance = Column(Float)  # 코스 총 거리 (km)
+    estimated_duration = Column(Integer)  # 예상 소요 시간 (분)
+
+    # 코스 설명
+    overview = Column(Text)
+    course_intro = Column(Text)
+    course_detail = Column(Text)
+
+    # 난이도 및 추천 정보
+    difficulty_level = Column(String)  # easy, medium, hard
+    recommended_season = Column(String)
+    recommended_who = Column(String)  # family, couple, solo 등
+
+    # 위치 정보
+    start_latitude = Column(Float)
+    start_longitude = Column(Float)
+    end_latitude = Column(Float)
+    end_longitude = Column(Float)
+
+    # 카테고리 정보
+    category_code = Column(String(10))
+    sub_category_code = Column(String(10))
+
+    # 추가 정보
+    tags = Column(JSONB)
+    images = Column(JSONB)
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class TravelCourseSpot(Base):
+    """
+    여행 코스 구성 지점 테이블
+    사용처: weather-flick-batch
+    설명: 여행 코스를 구성하는 개별 지점 정보 수집
+    """
+
+    __tablename__ = "travel_course_spots"
+
+    # Primary Key
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Foreign Keys
+    course_id = Column(String(20), ForeignKey("travel_courses.content_id"), nullable=False, index=True)
+    spot_content_id = Column(String(20), index=True)  # 관광지/시설의 content_id
+
+    # 순서 및 정보
+    sequence = Column(Integer, nullable=False)  # 코스 내 순서
+    spot_name = Column(String, nullable=False)
+    spot_type = Column(String)  # 관광지, 식당, 숙박 등
+
+    # 시간 정보
+    recommended_duration = Column(Integer)  # 추천 체류 시간 (분)
+    arrival_time = Column(String)  # 도착 시간
+    departure_time = Column(String)  # 출발 시간
+
+    # 교통 정보
+    distance_from_previous = Column(Float)  # 이전 지점으로부터의 거리 (km)
+    transport_to_next = Column(String)  # 다음 지점까지의 교통수단
+
+    # 추가 정보
+    description = Column(Text)
+    tips = Column(Text)  # 팁이나 주의사항
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class TravelCourseLike(Base):
+    """
+    여행 코스 좋아요 테이블
+    사용처: weather-flick-batch
+    설명: 사용자가 좋아요한 여행 코스 수집 데이터
+    """
+
+    __tablename__ = "travel_course_likes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    subtitle = Column(String(255))
+    summary = Column(Text)
+    description = Column(Text)
+    region = Column(String(50))
+    itinerary = Column(JSONB)
