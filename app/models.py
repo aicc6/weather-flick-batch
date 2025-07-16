@@ -73,7 +73,7 @@ class User(Base):
     """
     __tablename__ = "users"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     user_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=True)  # OAuth 사용자는 비밀번호가 없을 수 있음
@@ -107,7 +107,7 @@ class Admin(Base):
     """
     __tablename__ = "admins"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     admin_id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
@@ -127,7 +127,7 @@ class RefreshToken(Base):
     """
     __tablename__ = "refresh_tokens"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     token = Column(String, unique=True, index=True, nullable=False)
@@ -143,7 +143,7 @@ class PasswordResetToken(Base):
     """
     __tablename__ = "password_reset_tokens"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     token = Column(String, unique=True, index=True, nullable=False)
@@ -159,7 +159,7 @@ class EmailVerification(Base):
     """
     __tablename__ = "email_verifications"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, index=True, nullable=False)
     code = Column(String, nullable=False)
@@ -180,7 +180,7 @@ class TravelPlan(Base):
     """
     __tablename__ = "travel_plans"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     plan_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     title = Column(String, nullable=False)
@@ -208,7 +208,7 @@ class TravelRoute(Base):
     """
     __tablename__ = "travel_routes"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     route_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     plan_id = Column(UUID(as_uuid=True), ForeignKey("travel_plans.plan_id", ondelete="CASCADE"), nullable=False)
     day = Column(Integer, nullable=False)  # 며칠째
@@ -236,7 +236,7 @@ class TransportationDetail(Base):
     """
     __tablename__ = "transportation_details"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     detail_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     route_id = Column(UUID(as_uuid=True), ForeignKey("travel_routes.route_id", ondelete="CASCADE"), nullable=False)
     transport_name = Column(String)  # 노선명 (예: 2호선, 100번 버스)
@@ -262,7 +262,7 @@ class Region(Base):
     """
     __tablename__ = "regions"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     region_code = Column(String, primary_key=True)
     region_name = Column(String, nullable=False)
     parent_region_code = Column(String)
@@ -297,7 +297,7 @@ class HistoricalWeatherDaily(Base):
         UniqueConstraint('region_code', 'weather_date', name='uq_historical_weather_daily'),
         {"extend_existing": True, "autoload_replace": False}
     )
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     region_code = Column(String, nullable=False, index=True)
     weather_date = Column(Date, nullable=False, index=True)
@@ -320,11 +320,11 @@ class WeatherForecast(Base):
     """
     __tablename__ = "weather_forecast"
     __table_args__ = (
-        UniqueConstraint('region_code', 'forecast_date', 'forecast_time', 
+        UniqueConstraint('region_code', 'forecast_date', 'forecast_time',
                         name='uq_weather_forecast_region_datetime'),
         {"extend_existing": True, "autoload_replace": False}
     )
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     region_code = Column(String, nullable=False, index=True)
     forecast_date = Column(Date, nullable=False, index=True)
@@ -354,7 +354,7 @@ class WeatherCurrent(Base):
     """
     __tablename__ = "weather_current"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     region_code = Column(String, nullable=False, unique=True, index=True)
     temperature = Column(Float)
@@ -380,7 +380,7 @@ class WeatherData(Base):
     """
     __tablename__ = "weather_data"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     weather_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     location = Column(String, index=True, nullable=False)
     temperature = Column(Float)
@@ -403,7 +403,7 @@ class Destination(Base):
     """
     __tablename__ = "destinations"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     destination_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, index=True, nullable=False)
     province = Column(String, nullable=False)
@@ -429,7 +429,7 @@ class FavoritePlace(Base):
     """
     __tablename__ = "favorite_places"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     place_name = Column(String, nullable=False)
@@ -450,7 +450,7 @@ class Review(Base):
     """
     __tablename__ = "reviews"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     review_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     destination_id = Column(UUID(as_uuid=True), ForeignKey("destinations.destination_id", ondelete="CASCADE"))
@@ -470,7 +470,7 @@ class TravelWeatherScore(Base):
     """
     __tablename__ = "travel_weather_scores"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     score_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     destination_id = Column(UUID(as_uuid=True), ForeignKey("destinations.destination_id"))
     weather_condition = Column(String, nullable=False)
@@ -493,7 +493,7 @@ class TouristAttraction(Base):
     """
     __tablename__ = "tourist_attractions"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     content_id = Column(String, primary_key=True, index=True)
     region_code = Column(String, nullable=False, index=True)
     attraction_name = Column(String, nullable=False, index=True)
@@ -544,7 +544,7 @@ class Restaurant(Base):
     """
     __tablename__ = "restaurants"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     content_id = Column(String, primary_key=True, index=True)
     region_code = Column(String, nullable=False, index=True)
     restaurant_name = Column(String, nullable=False, index=True)
@@ -588,7 +588,7 @@ class CulturalFacility(Base):
     """
     __tablename__ = "cultural_facilities"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     content_id = Column(String, primary_key=True, index=True)
     region_code = Column(String, nullable=False, index=True)
     facility_name = Column(String, nullable=False, index=True)
@@ -627,9 +627,9 @@ class FestivalEvent(Base):
     사용처: weather-flick-back, weather-flick-admin-back, weather-flick-batch
     설명: 지역별 축제 및 행사 정보
     """
-    __tablename__ = "festival_events"
+    __tablename__ = "festivals_events"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     content_id = Column(String, primary_key=True, index=True)
     region_code = Column(String, nullable=False, index=True)
     event_name = Column(String, nullable=False, index=True)
@@ -676,7 +676,7 @@ class Shopping(Base):
     """
     __tablename__ = "shopping"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     content_id = Column(String, primary_key=True, index=True)
     region_code = Column(String, nullable=False, index=True)
     shop_name = Column(String, nullable=False, index=True)
@@ -717,7 +717,7 @@ class LeisureSports(Base):
     """
     __tablename__ = "leisure_sports"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     content_id = Column(String, primary_key=True, index=True)
     region_code = Column(String, nullable=False, index=True)
     facility_name = Column(String, nullable=False, index=True)
@@ -750,7 +750,7 @@ class LeisureSports(Base):
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     last_sync_at = Column(DateTime)
-    
+
     # 추가 상세 정보 필드들
     booktour = Column(String)
     createdtime = Column(String)
@@ -771,7 +771,7 @@ class PetTourInfo(Base):
     """
     __tablename__ = "pet_tour_info"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     content_id = Column(String, index=True)
     content_type_id = Column(String)
@@ -810,7 +810,7 @@ class ApiRawData(Base):
     """
     __tablename__ = "api_raw_data"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     api_provider = Column(String(50), nullable=False)  # 'tourapi', 'kma', 'google_maps' 등
     endpoint = Column(String(200), nullable=False)
@@ -836,7 +836,7 @@ class UserActivityLog(Base):
     """
     __tablename__ = "user_activity_logs"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     log_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
     action = Column(String, nullable=False)
@@ -855,7 +855,7 @@ class SystemLog(Base):
     """
     __tablename__ = "system_logs"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     log_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     level = Column(String, nullable=False)  # INFO, WARNING, ERROR, CRITICAL
     source = Column(String, nullable=False)
@@ -872,7 +872,7 @@ class BatchJobLog(Base):
     """
     __tablename__ = "batch_job_logs"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     job_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     job_name = Column(String, nullable=False)
     job_type = Column(String, nullable=False)
@@ -892,7 +892,7 @@ class ApiKeyUsage(Base):
     """
     __tablename__ = "api_key_usage"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     api_provider = Column(String, nullable=False)  # kto, kma, google 등
     api_key_index = Column(Integer, nullable=False)
@@ -917,7 +917,7 @@ class RecommendCourse(Base):
     """
     __tablename__ = "recommend_courses"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     id = Column(Integer, primary_key=True, index=True)
     course_name = Column(String, nullable=False)
     description = Column(Text)
@@ -939,7 +939,7 @@ class RecommendReview(Base):
     """
     __tablename__ = "recommend_reviews"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     course_id = Column(Integer, ForeignKey("recommend_courses.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
@@ -961,7 +961,7 @@ class RecommendLike(Base):
         UniqueConstraint('course_id', 'user_id', name='uq_recommend_likes_course_user'),
         {"extend_existing": True, "autoload_replace": False}
     )
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     course_id = Column(Integer, ForeignKey("recommend_courses.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
@@ -979,7 +979,7 @@ class ReviewLike(Base):
         UniqueConstraint('review_id', 'user_id', name='uq_review_likes_review_user'),
         {"extend_existing": True, "autoload_replace": False}
     )
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     review_id = Column(UUID(as_uuid=True), ForeignKey("recommend_reviews.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
@@ -999,7 +999,7 @@ class FCMToken(Base):
     """
     __tablename__ = "fcm_tokens"
     __table_args__ = {"extend_existing": True, "autoload_replace": False}
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     token = Column(String, unique=True, nullable=False)

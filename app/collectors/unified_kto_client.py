@@ -1557,6 +1557,8 @@ class UnifiedKTOClient:
                     if not item.get("facility_name"):
                         item["facility_name"] = "미상"
                     self.db_manager.upsert_leisure_sport(item)
+                elif target_table == "cultural_facilities":
+                    self.db_manager.upsert_cultural_facility(item)
                 else:
                     self.logger.warning(f"지원하지 않는 테이블: {target_table}, 관광지로 저장")
                     self.db_manager.upsert_tourist_attraction(item)

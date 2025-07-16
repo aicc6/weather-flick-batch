@@ -78,33 +78,49 @@ class DatabaseManagerExtension:
             raise
 
     def insert_kto_metadata(self, metadata: Dict) -> bool:
-        """KTO API 메타데이터 삽입"""
+        """KTO API 메타데이터를 api_raw_data의 request_params에 저장"""
 
-        query = """
-        INSERT INTO kto_api_metadata (
-            raw_data_id, content_type_id, area_code, sigungu_code,
-            total_count, page_no, num_of_rows, sync_batch_id
-        ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s
-        )
+        # api_raw_data 테이블의 request_params를 업데이트
+        raw_data_id = metadata.get("raw_data_id")
+        if not raw_data_id:
+            self.logger.error("raw_data_id가 없어 메타데이터를 저장할 수 없습니다")
+            return False
+
+        # 기존 request_params 가져오기
+        query = "SELECT request_params FROM api_raw_data WHERE id = %s"
+        result = self.db_manager.fetch_one(query, (raw_data_id,))
+        
+        if not result:
+            self.logger.error(f"raw_data_id {raw_data_id}에 해당하는 데이터를 찾을 수 없습니다")
+            return False
+        
+        # 기존 params와 메타데이터 병합
+        existing_params = result.get("request_params", {})
+        existing_params.update({
+            "content_type_id": metadata.get("content_type_id"),
+            "area_code": metadata.get("area_code"),
+            "sigungu_code": metadata.get("sigungu_code"),
+            "total_count": metadata.get("total_count"),
+            "page_no": metadata.get("page_no"),
+            "num_of_rows": metadata.get("num_of_rows"),
+            "sync_batch_id": metadata.get("sync_batch_id"),
+        })
+        
+        # request_params 업데이트
+        update_query = """
+        UPDATE api_raw_data 
+        SET request_params = %s 
+        WHERE id = %s
         """
-
-        params = (
-            metadata.get("raw_data_id"),
-            metadata.get("content_type_id"),
-            metadata.get("area_code"),
-            metadata.get("sigungu_code"),
-            metadata.get("total_count"),
-            metadata.get("page_no"),
-            metadata.get("num_of_rows"),
-            metadata.get("sync_batch_id"),
-        )
-
+        
         try:
-            self.db_manager.execute_update(query, params)
+            self.db_manager.execute_update(
+                update_query, 
+                (self.db_manager.serialize_for_db(existing_params), raw_data_id)
+            )
             return True
         except Exception as e:
-            self.logger.error(f"KTO 메타데이터 삽입 실패: {e}")
+            self.logger.error(f"KTO 메타데이터 업데이트 실패: {e}")
             return False
 
     def insert_kma_metadata(self, metadata: Dict) -> bool:
@@ -336,60 +352,40 @@ class DatabaseManagerExtension:
 
         query = """
         INSERT INTO accommodations (
-            content_id, region_code, accommodation_name, address,
-            latitude, longitude, first_image,
-            homepage, booktour, createdtime, modifiedtime, telname, faxno, zipcode, mlevel,
-            detail_intro_info, detail_additional_info,
-            raw_data_id, last_sync_at, data_quality_score
+            content_id, region_code, accommodation_name, accommodation_type,
+            address, tel, latitude, longitude, category_code, sub_category_code, parking,
+            raw_data_id
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
         ON CONFLICT (content_id) DO UPDATE SET
             region_code = EXCLUDED.region_code,
             accommodation_name = EXCLUDED.accommodation_name,
+            accommodation_type = EXCLUDED.accommodation_type,
             address = EXCLUDED.address,
+            tel = EXCLUDED.tel,
             latitude = EXCLUDED.latitude,
             longitude = EXCLUDED.longitude,
-            first_image = EXCLUDED.first_image,
-            homepage = EXCLUDED.homepage,
-            booktour = EXCLUDED.booktour,
-            createdtime = EXCLUDED.createdtime,
-            modifiedtime = EXCLUDED.modifiedtime,
-            telname = EXCLUDED.telname,
-            faxno = EXCLUDED.faxno,
-            zipcode = EXCLUDED.zipcode,
-            mlevel = EXCLUDED.mlevel,
-            detail_intro_info = EXCLUDED.detail_intro_info,
-            detail_additional_info = EXCLUDED.detail_additional_info,
+            category_code = EXCLUDED.category_code,
+            sub_category_code = EXCLUDED.sub_category_code,
+            parking = EXCLUDED.parking,
             raw_data_id = EXCLUDED.raw_data_id,
-            last_sync_at = EXCLUDED.last_sync_at,
-            data_quality_score = EXCLUDED.data_quality_score,
-            updated_at = CURRENT_TIMESTAMP
+            created_at = CURRENT_TIMESTAMP
         """
 
         params = (
             data.get("content_id"),
             data.get("region_code"),
-            data.get("accommodation_name"),
-            data.get("address"),
+            data.get("accommodation_name") or data.get("title") or "미상",
+            data.get("accommodation_type") or data.get("cat3") or "미상",
+            data.get("address") or data.get("addr1"),
+            data.get("tel"),
             data.get("latitude"),
             data.get("longitude"),
-            data.get("first_image"),
-            # 새로 추가된 필드들
-            data.get("homepage"),
-            data.get("booktour") or data.get("book_tour"),
-            data.get("createdtime") or data.get("created_time"),
-            data.get("modifiedtime") or data.get("modified_time"),
-            data.get("telname") or data.get("tel_name"),
-            data.get("faxno") or data.get("fax_no"),
-            data.get("zipcode") or data.get("zip_code"),
-            data.get("mlevel") or data.get("map_level"),
-            json.dumps(data.get("detail_intro_info") or data.get("intro_info"), ensure_ascii=False) if data.get("detail_intro_info") or data.get("intro_info") else None,
-            json.dumps(data.get("detail_additional_info") or data.get("additional_info"), ensure_ascii=False) if data.get("detail_additional_info") or data.get("additional_info") else None,
-            # 메타데이터 필드들
+            data.get("category_code") or data.get("cat1"),
+            data.get("sub_category_code") or data.get("cat2"),
+            data.get("parking"),
             data.get("raw_data_id"),
-            data.get("last_sync_at"),
-            data.get("data_quality_score"),
         )
 
         try:
@@ -470,6 +466,7 @@ class DatabaseManagerExtension:
         except Exception as e:
             self.logger.error(f"축제/행사 데이터 UPSERT 실패: {e}")
             return False
+
 
     def upsert_pet_tour_info(self, data: Dict) -> bool:
         """반려동물 동반여행 정보 UPSERT"""
@@ -864,7 +861,7 @@ class DatabaseManagerExtension:
         params = (
             data.get("content_id"),
             data.get("region_code"),
-            data.get("facility_name"),
+            data.get("facility_name") or data.get("title") or "미상",  # null 방지
             data.get("category_code"),
             data.get("sub_category_code"),
             data.get("address"),

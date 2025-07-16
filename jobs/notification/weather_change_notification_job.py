@@ -19,7 +19,7 @@ from app.monitoring.fcm_notification_channel import (
 )
 from app.services.weather_comparison_service import WeatherComparisonService
 from app.monitoring.monitoring_system import AlertSeverity
-from app.collectors.weather_collector import WeatherCollector
+from app.collectors.weather_collector import WeatherDataCollector
 
 logger = get_logger(__name__)
 
@@ -34,7 +34,7 @@ class WeatherChangeNotificationJob(BaseJob):
         
         self.db_manager = DatabaseManager()
         self.weather_comparison = WeatherComparisonService()
-        self.weather_collector = WeatherCollector()
+        self.weather_collector = WeatherDataCollector()
         self.notification_manager = NotificationManager()
         
         # 이메일 채널 설정

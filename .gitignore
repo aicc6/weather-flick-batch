@@ -104,3 +104,6 @@ test_*.py
 
 # Documentation builds
 docs/_build/
+
+# Firebase
+config/firebase-service-account.json
