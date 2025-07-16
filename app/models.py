@@ -282,6 +282,7 @@ class Region(Base):
     administrative_code = Column(String)
     api_mappings = Column(JSONB)
     coordinate_info = Column(JSONB)
+    tour_api_area_code = Column(String, nullable=True, index=True)  # 한국관광공사 API 지역 코드
 
 
 

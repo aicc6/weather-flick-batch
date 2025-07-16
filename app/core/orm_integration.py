@@ -334,12 +334,12 @@ class HybridQueryBuilder:
             생성된 SQL 쿼리
         """
         base_query = """
-        SELECT 
+        SELECT DISTINCT ON (ta.content_id)
             ta.*,
             r.region_name,
             CASE WHEN ta.rating IS NOT NULL THEN ta.rating ELSE 0 END as display_rating
         FROM tourist_attractions ta
-        LEFT JOIN regions r ON ta.region_code = r.region_code
+        LEFT JOIN regions r ON ta.region_code = r.tour_api_area_code AND r.region_level = 1
         WHERE 1=1
         """
         
