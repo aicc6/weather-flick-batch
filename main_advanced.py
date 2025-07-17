@@ -280,25 +280,25 @@ class WeatherFlickBatchSystem:
         )
 
         # 여행 플랜 날씨 변화 알림 작업 (하루 3번: 오전 9시, 오후 3시, 오후 9시)
-        weather_notification_config = BatchJobConfig(
-            job_id="weather_change_notification",
-            job_type=BatchJobType.NOTIFICATION,
-            name="여행 플랜 날씨 변화 알림",
-            description="여행 플랜의 날씨 변화를 감지하고 사용자에게 알림 전송",
-            priority=JobPriority.HIGH,
-            max_instances=1,
-            timeout=1800,  # 30분
-            retry_attempts=2,
-        )
-
         def weather_notification_task():
             job = WeatherChangeNotificationJob()
             return asyncio.run(job.execute())
 
         # 하루 3번 실행 (9시, 15시, 21시)
         for hour in [9, 15, 21]:
+            # 각 시간대별로 고유한 ID를 가진 설정 생성
+            hour_config = BatchJobConfig(
+                job_id=f"weather_change_notification_{hour}h",
+                job_type=BatchJobType.NOTIFICATION,
+                name=f"여행 플랜 날씨 변화 알림 ({hour}시)",
+                description="여행 플랜의 날씨 변화를 감지하고 사용자에게 알림 전송",
+                priority=JobPriority.HIGH,
+                max_instances=1,
+                timeout=1800,  # 30분
+                retry_attempts=2,
+            )
             self.batch_manager.register_job(
-                weather_notification_config,
+                hour_config,
                 weather_notification_task,
                 trigger="cron",
                 hour=hour,

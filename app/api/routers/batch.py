@@ -26,14 +26,14 @@ def get_job_manager():
     global job_manager
     if job_manager is None:
         try:
+            from app.api.services.job_manager_db import JobManagerDB
+            job_manager = JobManagerDB()
+            logger.info("JobManagerDB 초기화 성공")
+        except Exception as e:
+            logger.error(f"JobManagerDB 초기화 실패: {e}")
+            logger.info("기존 JobManager 사용")
             from app.api.services.job_manager import JobManager
             job_manager = JobManager()
-            logger.info("JobManager 초기화 성공")
-        except Exception as e:
-            logger.error(f"JobManager 초기화 실패: {e}")
-            logger.info("SimpleJobManager 사용")
-            from app.api.services.simple_job_manager import SimpleJobManager
-            job_manager = SimpleJobManager()
     return job_manager
 
 @router.get("/jobs", response_model=JobListResponse)
@@ -109,7 +109,7 @@ async def get_job_info(
         raise HTTPException(status_code=401, detail="Invalid API key")
     
     manager = get_job_manager()
-    job = await manager.get_job_info(job_id)
+    job = await manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
     
@@ -206,8 +206,6 @@ async def cleanup_old_data(
     if api_key != settings.API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
     
-    # TODO: cleanup_old_data 메서드 구현 필요
-    # manager = get_job_manager()
-    # result = await manager.cleanup_old_data(days=days)
-    result = {"deleted": 0}
-    return {"message": f"{result['deleted']}개의 오래된 작업이 삭제되었습니다."}
+    manager = get_job_manager()
+    result = await manager.cleanup_old_data(days=days)
+    return {"message": f"{result.get('deleted_jobs', 0)}개의 작업과 {result.get('deleted_logs', 0)}개의 로그가 삭제되었습니다."}

@@ -23,6 +23,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -44,6 +45,28 @@ class AdminStatus(enum.Enum):
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
     LOCKED = "LOCKED"
+
+
+class MetricType(enum.Enum):
+    """메트릭 타입"""
+    CPU_USAGE = "cpu_usage"
+    MEMORY_USAGE = "memory_usage"
+    DISK_USAGE = "disk_usage"
+    NETWORK_IO = "network_io"
+    JOB_EXECUTION_TIME = "job_execution_time"
+    JOB_SUCCESS_RATE = "job_success_rate"
+    API_RESPONSE_TIME = "api_response_time"
+    QUEUE_SIZE = "queue_size"
+    ERROR_RATE = "error_rate"
+    THROUGHPUT = "throughput"
+
+
+class AlertLevelEnum(enum.Enum):
+    """알럿 레벨"""
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
 
 
 class TravelPlanStatus(enum.Enum):
@@ -883,6 +906,39 @@ class BatchJobLog(Base):
     error_message = Column(Text)
     details = Column(JSONB, default=dict)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class BatchJobExecution(Base):
+    """
+    배치 작업 실행 내역 테이블
+    사용처: weather-flick-admin-back, weather-flick-batch
+    설명: 관리자가 실행한 배치 작업 내역 관리
+    """
+    __tablename__ = "batch_job_executions"
+    __table_args__ = {"extend_existing": True, "autoload_replace": False}
+    
+    # Primary Key
+    id = Column(String, primary_key=True, index=True)
+    
+    # 작업 정보
+    job_type = Column(String, nullable=False, index=True)
+    status = Column(String, nullable=False, index=True, default="PENDING")
+    parameters = Column(JSONB)
+    
+    # 진행 상황
+    progress = Column(Float, default=0.0)
+    current_step = Column(String)
+    total_steps = Column(Integer)
+    
+    # 실행 정보
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+    created_by = Column(String, nullable=False)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    
+    # 결과 정보
+    error_message = Column(Text)
+    result_summary = Column(JSONB)
 
 
 class ApiKeyUsage(Base):
@@ -2319,26 +2375,198 @@ class BatchJobSchedule(Base):
 
     schedule_id = Column(Integer, primary_key=True, index=True)
     job_id = Column(Integer, ForeignKey("batch_jobs.job_id"), nullable=False)
+    job_type = Column(String, nullable=False)  # 작업 유형
 
     # 스케줄 정보
-    scheduled_time = Column(DateTime, nullable=False, index=True)
+    scheduled_time = Column(DateTime, nullable=True, index=True)  # 일회성 실행 시간
+    cron_expression = Column(JSONB)  # 반복 실행을 위한 크론 표현식
     priority = Column(Integer, default=5)  # 1-10, 높을수록 우선순위 높음
 
+    # 활성화 및 설정
+    is_active = Column(Boolean, default=True)  # 스케줄 활성화 여부
+    config = Column(JSONB)  # 작업별 설정
+    description = Column(Text)  # 스케줄 설명
+
     # 실행 상태
-    status = Column(String, default="pending")  # pending, running, completed, failed, cancelled
+    status = Column(String, default="pending")  # pending, running, completed, failed, cancelled, scheduled
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
+
+    # 실행 기록
+    last_run = Column(DateTime)  # 마지막 실행 시간
+    last_execution_id = Column(String)  # 마지막 실행 ID
 
     # 실행 결과
     result_summary = Column(JSONB)
     error_message = Column(Text)
 
     created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     # 인덱스
     __table_args__ = (
         Index("idx_schedule_status_time", "status", "scheduled_time"),
         Index("idx_schedule_job", "job_id"),
+        Index("idx_schedule_active", "is_active"),
+    )
+
+
+class BatchJobRetryPolicy(Base):
+    """
+    배치 작업 재시도 정책 테이블
+    사용처: weather-flick-batch
+    설명: 작업 유형별 재시도 정책 관리
+    """
+    
+    __tablename__ = "batch_job_retry_policies"
+    
+    policy_id = Column(Integer, primary_key=True, index=True)
+    job_type = Column(String, nullable=False, unique=True, index=True)  # 작업 유형
+    
+    # 재시도 설정
+    max_attempts = Column(Integer, default=3)  # 최대 재시도 횟수
+    retry_strategy = Column(String, default="exponential_backoff")  # 재시도 전략
+    initial_delay_seconds = Column(Integer, default=60)  # 초기 지연 시간
+    max_delay_seconds = Column(Integer, default=3600)  # 최대 지연 시간
+    backoff_multiplier = Column(Float, default=2.0)  # 백오프 배수
+    
+    # 조건 설정
+    retry_on_errors = Column(JSONB)  # 재시도할 에러 타입 목록
+    enabled = Column(Boolean, default=True)  # 정책 활성화 여부
+    
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class BatchJobRetryAttempt(Base):
+    """
+    배치 작업 재시도 시도 테이블
+    사용처: weather-flick-batch
+    설명: 개별 재시도 시도 기록
+    """
+    
+    __tablename__ = "batch_job_retry_attempts"
+    
+    attempt_id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(String, nullable=False, index=True)  # 외래 키 제거 (별도 테이블에 있음)
+    job_type = Column(String, nullable=False)
+    
+    # 재시도 정보
+    attempt_number = Column(Integer, nullable=False)  # 시도 번호
+    status = Column(String, default="pending")  # pending, in_progress, success, failed
+    
+    # 에러 정보
+    error_message = Column(Text)
+    error_type = Column(String)
+    
+    # 타이밍
+    delay_seconds = Column(Integer, default=0)  # 재시도까지 지연 시간
+    started_at = Column(DateTime, server_default=func.now())
+    completed_at = Column(DateTime)
+    next_retry_at = Column(DateTime)  # 다음 재시도 예정 시간
+    
+    # 관계
+    retry_job_id = Column(String)  # 재시도로 생성된 새 작업 ID
+    
+    # 인덱스
+    __table_args__ = (
+        Index("idx_retry_attempt_job", "job_id"),
+        Index("idx_retry_attempt_status", "status"),
+        Index("idx_retry_attempt_next", "status", "next_retry_at"),
+    )
+
+
+# ===========================================
+# 알림 관련 테이블
+# ===========================================
+
+class BatchJobNotificationSubscription(Base):
+    """
+    배치 작업 알림 구독 테이블
+    사용처: weather-flick-batch
+    설명: 사용자별 알림 구독 설정
+    """
+    
+    __tablename__ = "batch_job_notification_subscriptions"
+    
+    subscription_id = Column(Integer, primary_key=True, index=True)
+    job_type = Column(String, nullable=True, index=True)  # None이면 모든 작업
+    channel = Column(String, nullable=False)  # email, slack, webhook
+    events = Column(JSONB, nullable=False)  # 구독할 이벤트 목록
+    recipient = Column(String, nullable=False)  # 수신자
+    config = Column(JSONB)  # 채널별 추가 설정
+    filters = Column(JSONB)  # 알림 필터 조건
+    enabled = Column(Boolean, default=True)
+    
+    # 시간 정보
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # 인덱스
+    __table_args__ = (
+        Index("idx_notification_sub_job_type", "job_type"),
+        Index("idx_notification_sub_channel", "channel"),
+        Index("idx_notification_sub_enabled", "enabled"),
+    )
+
+
+class BatchJobNotificationHistory(Base):
+    """
+    배치 작업 알림 발송 이력 테이블
+    사용처: weather-flick-batch
+    설명: 알림 발송 이력 및 결과
+    """
+    
+    __tablename__ = "batch_job_notification_history"
+    
+    notification_id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(String, nullable=False, index=True)
+    job_type = Column(String, nullable=False)
+    event = Column(String, nullable=False)  # 이벤트 유형
+    channel = Column(String, nullable=False)  # 알림 채널
+    recipient = Column(String, nullable=False)
+    subject = Column(String)  # 이메일 제목
+    message = Column(Text, nullable=False)
+    level = Column(String, default="info")  # 알림 레벨
+    
+    # 발송 정보
+    sent_at = Column(DateTime, server_default=func.now(), index=True)
+    success = Column(Boolean, default=False)
+    error_message = Column(Text)
+    retry_count = Column(Integer, default=0)
+    
+    # 인덱스
+    __table_args__ = (
+        Index("idx_notification_hist_job", "job_id"),
+        Index("idx_notification_hist_event", "event"),
+        Index("idx_notification_hist_sent", "sent_at"),
+    )
+
+
+class BatchJobNotificationTemplate(Base):
+    """
+    배치 작업 알림 템플릿 테이블
+    사용처: weather-flick-batch
+    설명: 이벤트별 알림 템플릿
+    """
+    
+    __tablename__ = "batch_job_notification_templates"
+    
+    template_id = Column(Integer, primary_key=True, index=True)
+    event = Column(String, nullable=False)  # 이벤트 유형
+    channel = Column(String, nullable=False)  # 알림 채널
+    subject_template = Column(String)  # 제목 템플릿 (이메일용)
+    message_template = Column(Text, nullable=False)  # 메시지 템플릿
+    level = Column(String, default="info")  # 기본 알림 레벨
+    variables = Column(JSONB)  # 사용 가능한 변수 목록
+    
+    # 시간 정보
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # 인덱스
+    __table_args__ = (
+        Index("idx_notification_tmpl_event_channel", "event", "channel"),
     )
 
 
@@ -2583,3 +2811,205 @@ class TravelCourseLike(Base):
     description = Column(Text)
     region = Column(String(50))
     itinerary = Column(JSONB)
+    
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# ===========================================
+# 성능 모니터링 관련 테이블
+# ===========================================
+
+class BatchJobPerformanceMetric(Base):
+    """
+    배치 작업 성능 메트릭 테이블
+    사용처: weather-flick-batch
+    설명: 배치 작업의 성능 지표 수집 및 저장
+    """
+    
+    __tablename__ = "batch_job_performance_metrics"
+    
+    metric_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    job_id = Column(String, nullable=False, index=True)
+    
+    # 메트릭 정보
+    metric_type = Column(Enum(MetricType), nullable=False, index=True)
+    metric_value = Column(Float, nullable=False)
+    metric_unit = Column(String(50))  # seconds, mb, percent, count 등
+    
+    # 시간 정보
+    measured_at = Column(DateTime, nullable=False, index=True)
+    
+    # 추가 메타데이터
+    extra_metadata = Column(JSONB)
+    
+    created_at = Column(DateTime, server_default=func.now())
+    
+    # 인덱스
+    __table_args__ = (
+        Index("idx_metric_type_time", "metric_type", "measured_at"),
+        Index("idx_metric_job_type", "job_id", "metric_type"),
+    )
+
+
+class SystemPerformanceMetric(Base):
+    """
+    시스템 성능 메트릭 테이블
+    사용처: weather-flick-batch
+    설명: 전체 시스템의 성능 지표 수집 및 저장
+    """
+    
+    __tablename__ = "system_performance_metrics"
+    
+    metric_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    
+    # 메트릭 정보
+    metric_type = Column(Enum(MetricType), nullable=False, index=True)
+    metric_value = Column(Float, nullable=False)
+    metric_unit = Column(String(50))
+    
+    # 시간 정보
+    measured_at = Column(DateTime, nullable=False, index=True)
+    
+    # 시스템 정보
+    hostname = Column(String(255))
+    service_name = Column(String(100))
+    
+    # 추가 메타데이터
+    extra_metadata = Column(JSONB)
+    
+    created_at = Column(DateTime, server_default=func.now())
+    
+    # 인덱스
+    __table_args__ = (
+        Index("idx_sys_metric_type_time", "metric_type", "measured_at"),
+        Index("idx_sys_metric_service", "service_name", "metric_type"),
+    )
+
+
+class PerformanceAlert(Base):
+    """
+    성능 알럿 테이블
+    사용처: weather-flick-batch
+    설명: 성능 임계값 초과 시 발생하는 알럿 저장
+    """
+    
+    __tablename__ = "performance_alerts"
+    
+    alert_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    rule_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    
+    # 알럿 정보
+    level = Column(Enum(AlertLevelEnum), nullable=False, index=True)
+    metric_type = Column(Enum(MetricType), nullable=False)
+    message = Column(Text, nullable=False)
+    
+    # 값 정보
+    current_value = Column(Float, nullable=False)
+    threshold_value = Column(Float, nullable=False)
+    
+    # 시간 정보
+    triggered_at = Column(DateTime, nullable=False, index=True)
+    resolved_at = Column(DateTime, index=True)
+    
+    # 작업 정보 (해당하는 경우)
+    job_id = Column(String, index=True)
+    job_type = Column(String(100))
+    
+    # 추가 메타데이터
+    extra_metadata = Column(JSONB)
+    
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # 인덱스
+    __table_args__ = (
+        Index("idx_alert_level_triggered", "level", "triggered_at"),
+        Index("idx_alert_metric_time", "metric_type", "triggered_at"),
+    )
+
+
+class AlertRule(Base):
+    """
+    알럿 규칙 테이블
+    사용처: weather-flick-batch
+    설명: 성능 모니터링 알럿 규칙 정의
+    """
+    
+    __tablename__ = "alert_rules"
+    
+    rule_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    
+    # 규칙 정보
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    
+    # 조건 정보
+    metric_type = Column(Enum(MetricType), nullable=False, index=True)
+    operator = Column(String(10), nullable=False)  # >, <, >=, <=, ==
+    threshold_value = Column(Float, nullable=False)
+    duration_minutes = Column(Integer, nullable=False)  # 지속 시간
+    
+    # 알럿 레벨
+    alert_level = Column(Enum(AlertLevelEnum), nullable=False)
+    
+    # 필터 조건
+    job_type_filter = Column(String(100))  # 특정 작업 타입에만 적용
+    time_filter = Column(JSONB)  # 시간대 필터
+    
+    # 알림 설정
+    notification_channels = Column(JSONB)  # ["email", "slack", "webhook"]
+    
+    # 활성화 상태
+    enabled = Column(Boolean, default=True, nullable=False)
+    
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # 인덱스
+    __table_args__ = (
+        Index("idx_rule_metric_enabled", "metric_type", "enabled"),
+    )
+
+
+class PerformanceReport(Base):
+    """
+    성능 리포트 테이블
+    사용처: weather-flick-batch
+    설명: 생성된 성능 분석 리포트 저장
+    """
+    
+    __tablename__ = "performance_reports"
+    
+    report_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    
+    # 리포트 정보
+    title = Column(String(255), nullable=False)
+    report_type = Column(String(100), nullable=False)  # daily, weekly, monthly, custom
+    
+    # 시간 범위
+    start_date = Column(DateTime, nullable=False)
+    end_date = Column(DateTime, nullable=False)
+    
+    # 리포트 내용
+    summary = Column(JSONB, nullable=False)
+    job_type_analysis = Column(JSONB)
+    system_metrics_analysis = Column(JSONB)
+    recommendations = Column(JSONB)
+    trends_analysis = Column(JSONB)
+    
+    # 생성 정보
+    generated_by = Column(String(255))  # system, admin email 등
+    generated_at = Column(DateTime, nullable=False)
+    
+    # 파일 정보 (PDF, Excel 등)
+    file_path = Column(String(500))
+    file_size_bytes = Column(Integer)
+    
+    created_at = Column(DateTime, server_default=func.now())
+    
+    # 인덱스
+    __table_args__ = (
+        Index("idx_report_type_generated", "report_type", "generated_at"),
+        Index("idx_report_date_range", "start_date", "end_date"),
+    )
