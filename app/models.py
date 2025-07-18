@@ -1044,27 +1044,6 @@ class ReviewLike(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
-# ===========================================
-# FCM 토큰 관련 테이블
-# ===========================================
-
-class FCMToken(Base):
-    """
-    FCM 토큰 테이블
-    사용처: weather-flick-back, weather-flick-batch
-    설명: 푸시 알림을 위한 FCM 토큰 관리
-    """
-    __tablename__ = "fcm_tokens"
-    __table_args__ = {"extend_existing": True, "autoload_replace": False}
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
-    token = Column(String, unique=True, nullable=False)
-    device_type = Column(String)  # ios, android, web
-    device_id = Column(String)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 # ===========================================
