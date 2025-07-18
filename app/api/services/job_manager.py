@@ -393,24 +393,27 @@ class JobManager:
             job.current_step = "활성 여행 플랜 조회 중"
             job.progress = 20.0
 
-            # 날씨 변경 알림 실행
-            result = await notification_job.execute()
+            # 날씨 변경 알림 실행 (동기 메서드 호출)
+            result_obj = await asyncio.to_thread(notification_job.run)
 
             job.progress = 80.0
             job.current_step = "알림 전송 완료"
 
             # 결과 요약
+            result_metadata = result_obj.metadata or {}
             job.result_summary = {
-                "status": result.get("status", "unknown"),
-                "plans_processed": result.get("plans_processed", 0),
-                "notifications_sent": result.get("notifications_sent", 0),
-                "timestamp": result.get("timestamp", ""),
+                "status": "completed" if result_obj.is_success else "failed",
+                "plans_processed": result_metadata.get("plans_processed", 0),
+                "notifications_sent": result_metadata.get("notifications_sent", 0),
+                "timestamp": result_metadata.get("timestamp", ""),
+                "processed_records": result_obj.processed_records,
+                "duration_seconds": result_obj.duration_seconds,
                 "parameters": parameters
             }
 
             await self._add_log(job_id, LogLevel.INFO, 
-                f"날씨 변경 알림 완료 - 처리된 플랜: {result.get('plans_processed', 0)}개, "
-                f"전송된 알림: {result.get('notifications_sent', 0)}개", 
+                f"날씨 변경 알림 완료 - 처리된 플랜: {result_metadata.get('plans_processed', 0)}개, "
+                f"전송된 알림: {result_metadata.get('notifications_sent', 0)}개", 
                 job.result_summary
             )
 

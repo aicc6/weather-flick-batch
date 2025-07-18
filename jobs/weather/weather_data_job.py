@@ -274,11 +274,16 @@ class WeatherDataJob(BaseJob):
             # 배치 INSERT 최적화 사용
             from app.core.batch_insert_optimizer import optimize_weather_current_insert
             
-            # 지역 코드 추가
+            # 지역 코드 및 날짜 정보 추가
             region_code = self._get_region_code_from_name(region_name)
+            today = datetime.now().date()
             for data in processed_data:
                 data["region_code"] = region_code
                 data["region_name"] = region_name
+                data["weather_date"] = today
+                # temperature를 avg_temp으로 매핑
+                if "temperature" in data and "avg_temp" not in data:
+                    data["avg_temp"] = data["temperature"]
             
             # 배치 INSERT 실행
             result = await optimize_weather_current_insert(processed_data, raw_data_id)

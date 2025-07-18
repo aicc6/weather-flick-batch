@@ -82,22 +82,23 @@ class BatchInsertOptimizer:
             
             # UPSERT 쿼리 (중복 데이터 처리)
             query = """
-                INSERT INTO current_weather (
-                    region_code, temperature, humidity, precipitation, 
-                    wind_speed, wind_direction, atmospheric_pressure,
-                    weather_condition, visibility, observed_at, raw_data_id
+                INSERT INTO weather_current (
+                    region_code, region_name, weather_date, year, month, day,
+                    avg_temp, max_temp, min_temp, humidity, precipitation, 
+                    wind_speed, weather_condition, visibility, uv_index, raw_data_id
                 ) VALUES %s
-                ON CONFLICT (region_code, observed_at) 
+                ON CONFLICT (region_code, weather_date) 
                 DO UPDATE SET
-                    temperature = EXCLUDED.temperature,
+                    avg_temp = EXCLUDED.avg_temp,
+                    max_temp = EXCLUDED.max_temp,
+                    min_temp = EXCLUDED.min_temp,
                     humidity = EXCLUDED.humidity,
+                    precipitation = EXCLUDED.precipitation,
                     wind_speed = EXCLUDED.wind_speed,
-                    wind_direction = EXCLUDED.wind_direction,
-                    atmospheric_pressure = EXCLUDED.atmospheric_pressure,
                     weather_condition = EXCLUDED.weather_condition,
                     visibility = EXCLUDED.visibility,
-                    raw_data_id = EXCLUDED.raw_data_id,
-                    updated_at = CURRENT_TIMESTAMP
+                    uv_index = EXCLUDED.uv_index,
+                    raw_data_id = EXCLUDED.raw_data_id
             """
             
             # 배치 실행
@@ -226,17 +227,29 @@ class BatchInsertOptimizer:
         
         batch_data = []
         for data in weather_data:
+            # 날짜 정보 추출
+            weather_date = data.get("weather_date", datetime.now().date())
+            if isinstance(weather_date, datetime):
+                weather_date = weather_date.date()
+            elif isinstance(weather_date, str):
+                weather_date = datetime.strptime(weather_date, "%Y-%m-%d").date()
+                
             row = (
                 data.get("region_code", "00"),
-                data.get("temperature"),
+                data.get("region_name", ""),
+                weather_date,
+                weather_date.year,
+                weather_date.month,
+                weather_date.day,
+                data.get("avg_temp", data.get("temperature")),
+                data.get("max_temp", data.get("temperature")),
+                data.get("min_temp", data.get("temperature")),
                 data.get("humidity"),
                 data.get("precipitation", 0),
                 data.get("wind_speed"),
-                data.get("wind_direction"),
-                data.get("atmospheric_pressure"),
                 data.get("weather_condition", ""),
                 data.get("visibility"),
-                data.get("observed_at", datetime.now()),
+                data.get("uv_index"),
                 raw_data_id
             )
             batch_data.append(row)

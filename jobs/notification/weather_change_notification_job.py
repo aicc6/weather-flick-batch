@@ -77,8 +77,29 @@ class WeatherChangeNotificationJob(BaseJob):
             except Exception as e:
                 self.logger.warning(f"FCM 채널 초기화 실패: {str(e)}. FCM 알림이 비활성화됩니다.")
         
-    async def execute(self) -> Dict[str, Any]:
-        """Job 실행"""
+    def execute(self):
+        """Job 실행 (BaseJob 인터페이스 구현)"""
+        from app.core.base_job import JobResult, JobStatus
+        import asyncio
+        
+        # 비동기 실행을 동기로 래핑
+        result_data = asyncio.run(self._execute_async())
+        
+        # JobResult 객체 생성 및 반환
+        result = JobResult(
+            job_name=self.config.job_name,
+            job_type=self.config.job_type,
+            status=JobStatus.COMPLETED if result_data['status'] == 'success' else JobStatus.FAILED,
+            start_time=datetime.now(),
+            end_time=datetime.now(),
+            processed_records=result_data.get('notifications_sent', 0),
+            metadata=result_data
+        )
+        
+        return result
+    
+    async def _execute_async(self) -> Dict[str, Any]:
+        """실제 비동기 실행 로직"""
         try:
             self.logger.info("여행 플랜 날씨 변화 모니터링 시작")
             

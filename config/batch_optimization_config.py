@@ -76,15 +76,15 @@ class BatchOptimizationConfig:
     # 테이블별 특화 설정
     TABLE_SPECIFIC_CONFIGS = {
         # 날씨 데이터 테이블들
-        "current_weather": TableSpecificConfig(
-            table_name="current_weather",
+        "weather_current": TableSpecificConfig(
+            table_name="weather_current",
             batch_size=1000,
             max_memory_mb=80,
             transaction_timeout=45,
             retry_attempts=3,
             parallel_workers=2,
             use_upsert=True,
-            conflict_columns=["region_code", "observed_at"]
+            conflict_columns=["region_code", "weather_date"]
         ),
         
         "weather_forecast": TableSpecificConfig(

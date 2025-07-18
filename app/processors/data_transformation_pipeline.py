@@ -600,7 +600,7 @@ class KMADataTransformer(BaseDataTransformer):
     def get_target_table(self, endpoint: str) -> str:
         """엔드포인트별 대상 테이블 결정"""
         if "getUltraSrtNcst" in endpoint:
-            return "current_weather"
+            return "weather_current"
         elif "getUltraSrtFcst" in endpoint or "getVilageFcst" in endpoint:
             return "weather_forecast"
         else:
@@ -617,7 +617,7 @@ class KMADataTransformer(BaseDataTransformer):
         # 2. 대상 테이블별 변환
         target_table = self.get_target_table(endpoint)
 
-        if target_table == "current_weather":
+        if target_table == "weather_current":
             return self._transform_current_weather(items)
         elif target_table == "weather_forecast":
             return self._transform_weather_forecast(items)
