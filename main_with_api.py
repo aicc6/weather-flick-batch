@@ -135,11 +135,82 @@ class BatchSystemWithAPI:
                 quality_config, quality_check_task, trigger="cron", hour=2, minute=0
             )
             
+            # 4. PENDING 작업 처리 워커 (30초마다)
+            pending_worker_config = BatchJobConfig(
+                job_id="pending_job_worker",
+                job_type=BatchJobType.NOTIFICATION,
+                name="대기 중인 작업 처리",
+                description="데이터베이스에서 PENDING 상태의 작업을 찾아서 실행",
+                priority=JobPriority.HIGH,
+                max_instances=1,
+                timeout=300,
+                retry_attempts=1,
+            )
+            
+            def pending_worker_task():
+                return asyncio.run(self._process_pending_jobs())
+            
+            self.batch_manager.register_job(
+                pending_worker_config, pending_worker_task, trigger="interval", seconds=30
+            )
+            
             self.batch_logger.info("배치 작업 등록 완료")
             
         except Exception as e:
             self.batch_logger.error(f"배치 작업 등록 실패: {e}")
             raise
+    
+    async def _process_pending_jobs(self):
+        """데이터베이스에서 PENDING 상태의 작업을 처리"""
+        try:
+            from app.core.database_manager import DatabaseManager
+            from app.api.services.job_manager import JobManager
+            import uuid
+            
+            db_manager = DatabaseManager()
+            job_manager = JobManager()
+            
+            # PENDING 상태의 작업 조회
+            pending_jobs = db_manager.get_pending_batch_jobs()
+            
+            if not pending_jobs:
+                return
+                
+            self.batch_logger.info(f"PENDING 작업 {len(pending_jobs)}개 발견")
+            
+            for job_data in pending_jobs:
+                try:
+                    job_id = job_data.get('id')
+                    job_type = job_data.get('job_type')
+                    parameters = job_data.get('parameters', {})
+                    
+                    self.batch_logger.info(f"PENDING 작업 실행 시작: {job_id} ({job_type})")
+                    
+                    # JobManager를 통해 작업 실행
+                    from app.api.schemas import JobType
+                    
+                    # 문자열을 JobType enum으로 변환
+                    try:
+                        job_type_enum = JobType(job_type)
+                    except ValueError:
+                        self.batch_logger.error(f"지원하지 않는 작업 타입: {job_type}")
+                        continue
+                    
+                    # 작업 실행 (비동기)
+                    await job_manager.execute_job(
+                        job_id=job_id,
+                        job_type=job_type_enum,
+                        parameters=parameters,
+                        requested_by="batch_system"
+                    )
+                    
+                    self.batch_logger.info(f"PENDING 작업 실행 요청 완료: {job_id}")
+                    
+                except Exception as e:
+                    self.batch_logger.error(f"PENDING 작업 처리 중 오류: {job_id if 'job_id' in locals() else 'unknown'} - {e}")
+                    
+        except Exception as e:
+            self.batch_logger.error(f"PENDING 작업 조회 중 오류: {e}")
         
     def start_batch_scheduler(self):
         """배치 스케줄러 시작"""

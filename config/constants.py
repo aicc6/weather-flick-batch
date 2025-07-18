@@ -14,6 +14,7 @@ class JobType(Enum):
     TOURIST_DATA = "tourist_data"
     SCORE_CALCULATION = "score_calculation"
     DATA_QUALITY_CHECK = "data_quality_check"
+    WEATHER_CHANGE_NOTIFICATION = "weather_change_notification"
 
 
 class JobStatus(Enum):

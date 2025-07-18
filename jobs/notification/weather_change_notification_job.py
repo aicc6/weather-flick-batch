@@ -26,8 +26,21 @@ logger = get_logger(__name__)
 class WeatherChangeNotificationJob(BaseJob):
     """여행 플랜의 날씨 변화를 감지하고 알림을 전송하는 Job"""
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, config=None):
+        from app.core.base_job import JobConfig
+        from config.constants import JobType
+        
+        if config is None:
+            config = JobConfig(
+                job_name="weather_change_notification",
+                job_type=JobType.WEATHER_CHANGE_NOTIFICATION,
+                schedule_expression="0 9,15,21 * * *",  # 하루 3번 실행
+                retry_count=3,
+                timeout_minutes=30,
+                enabled=True,
+            )
+        
+        super().__init__(config)
         self.name = "WeatherChangeNotificationJob"
         self.description = "여행 플랜 날씨 변화 모니터링 및 알림 전송"
         self.schedule = "0 9,15,21 * * *"  # 하루 3번 실행 (오전 9시, 오후 3시, 오후 9시)
@@ -37,22 +50,26 @@ class WeatherChangeNotificationJob(BaseJob):
         self.weather_collector = WeatherDataCollector()
         self.notification_manager = NotificationManager()
         
+        # 환경 변수에서 설정 값 가져오기
+        import os
+        
         # 이메일 채널 설정
         email_channel = EmailNotificationChannel({
-            'smtp_host': self.config.get('SMTP_HOST', 'smtp.gmail.com'),
-            'smtp_port': self.config.get('SMTP_PORT', 587),
-            'smtp_user': self.config.get('SMTP_USER'),
-            'smtp_password': self.config.get('SMTP_PASSWORD'),
-            'from_email': self.config.get('FROM_EMAIL', 'noreply@weatherflick.com')
+            'smtp_host': os.getenv('SMTP_HOST', 'smtp.gmail.com'),
+            'smtp_port': int(os.getenv('SMTP_PORT', '587')),
+            'smtp_user': os.getenv('SMTP_USER'),
+            'smtp_password': os.getenv('SMTP_PASSWORD'),
+            'from_email': os.getenv('FROM_EMAIL', 'noreply@weatherflick.com')
         })
         self.notification_manager.register_channel('email', email_channel)
         
         # FCM 채널 설정 (Firebase 설정이 있는 경우)
-        if self.config.get('FIREBASE_CREDENTIALS_PATH'):
+        firebase_credentials_path = os.getenv('FIREBASE_CREDENTIALS_PATH')
+        if firebase_credentials_path:
             try:
                 fcm_config = FCMConfig(
-                    credentials_path=self.config.get('FIREBASE_CREDENTIALS_PATH'),
-                    project_id=self.config.get('FIREBASE_PROJECT_ID')
+                    credentials_path=firebase_credentials_path,
+                    project_id=os.getenv('FIREBASE_PROJECT_ID')
                 )
                 fcm_channel = FCMNotificationChannel(fcm_config)
                 self.notification_manager.register_channel('fcm', fcm_channel)
@@ -104,9 +121,7 @@ class WeatherChangeNotificationJob(BaseJob):
                 tp.itinerary,
                 u.email,
                 u.nickname as user_name,
-                unp.weather_change_enabled,
-                unp.min_temperature_change,
-                unp.rain_probability_threshold,
+                unp.weather_alerts,
                 unp.email_enabled,
                 COALESCE(
                     (SELECT array_agg(DISTINCT d.name) 
@@ -118,12 +133,12 @@ class WeatherChangeNotificationJob(BaseJob):
                 ) as destinations
             FROM travel_plans tp
             JOIN users u ON tp.user_id = u.user_id
-            LEFT JOIN user_notification_preferences unp ON u.user_id = unp.user_id
+            LEFT JOIN user_notification_settings unp ON u.user_id = unp.user_id
             WHERE tp.start_date >= CURRENT_DATE
               AND tp.end_date >= CURRENT_DATE
-              AND tp.status = 'active'
+              AND tp.status IN ('CONFIRMED', 'IN_PROGRESS')
               AND u.is_email_verified = true
-              AND COALESCE(unp.weather_change_enabled, true) = true
+              AND COALESCE(unp.weather_alerts, true) = true
               AND COALESCE(unp.email_enabled, true) = true
             ORDER BY tp.start_date;
         """
@@ -188,8 +203,8 @@ class WeatherChangeNotificationJob(BaseJob):
             old_weather_info,
             new_weather_info,
             {
-                'min_temperature_change': plan.get('min_temperature_change', 5.0),
-                'rain_probability_threshold': plan.get('rain_probability_threshold', 30)
+                'min_temperature_change': 5.0,  # 기본값: 5도 이상 변화
+                'rain_probability_threshold': 30  # 기본값: 30% 이상 강수확률 변화
             }
         )
         
@@ -327,7 +342,8 @@ class WeatherChangeNotificationJob(BaseJob):
             )
             
             # FCM 푸시 알림 전송 (별도로 처리)
-            if self.config.get('FIREBASE_CREDENTIALS_PATH'):
+            import os
+            if os.getenv('FIREBASE_CREDENTIALS_PATH'):
                 try:
                     fcm_success = await send_fcm_notification_to_user(
                         user_id=str(plan['user_id']),
@@ -441,8 +457,9 @@ class WeatherChangeNotificationJob(BaseJob):
     
     def validate(self) -> bool:
         """Job 유효성 검증"""
+        import os
         # SMTP 설정 확인
-        if not self.config.get('SMTP_USER') or not self.config.get('SMTP_PASSWORD'):
+        if not os.getenv('SMTP_USER') or not os.getenv('SMTP_PASSWORD'):
             self.logger.warning("SMTP 설정이 없음. 이메일 전송이 불가능할 수 있습니다.")
             
         return True

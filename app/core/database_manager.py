@@ -752,6 +752,22 @@ class UnifiedDatabaseManager:
             error_message,
         )
 
+    def get_pending_batch_jobs(self) -> List[Dict[str, Any]]:
+        """PENDING 상태의 배치 작업 조회"""
+        query = """
+        SELECT id, job_type, parameters, created_at, created_by
+        FROM batch_job_executions 
+        WHERE status = 'PENDING' 
+        AND created_at > NOW() - INTERVAL '1 hour'
+        ORDER BY created_at ASC
+        LIMIT 10
+        """
+        try:
+            return self.fetch_all(query)
+        except Exception as e:
+            self.logger.error(f"PENDING 작업 조회 실패: {e}")
+            return []
+
     # ========== 호환성을 위한 메서드들 ==========
 
     def execute_query(

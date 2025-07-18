@@ -68,7 +68,8 @@ class JobManagerDB:
             JobType.RECOMMENDATION_CALCULATION: self._execute_recommendation,
             JobType.DATA_QUALITY_CHECK: self._execute_quality_check,
             JobType.ARCHIVE_BACKUP: self._execute_archive,
-            JobType.SYSTEM_HEALTH_CHECK: self._execute_health_check
+            JobType.SYSTEM_HEALTH_CHECK: self._execute_health_check,
+            JobType.WEATHER_CHANGE_NOTIFICATION: self._execute_weather_change_notification
         }
         
         # 재시도 매니저 참조 (나중에 설정됨)
@@ -479,6 +480,41 @@ class JobManagerDB:
 
         except Exception as e:
             await self._add_log(job_id, LogLevel.ERROR, f"헬스체크 오류: {str(e)}")
+            raise
+
+    async def _execute_weather_change_notification(self, job_id: str, parameters: Dict[str, Any]):
+        """날씨 변경 알림 실행"""
+        try:
+            await self._add_log(job_id, LogLevel.INFO, "날씨 변경 알림 작업 시작")
+            await self._update_job_progress(job_id, 10.0, "날씨 변경 알림 시스템 초기화 중")
+
+            # WeatherChangeNotificationJob 실행
+            from jobs.notification.weather_change_notification_job import WeatherChangeNotificationJob
+            from app.core.base_job import JobConfig
+            from config.constants import JobType as ConstJobType
+            
+            config = JobConfig(
+                job_name="weather_change_notification",
+                job_type=ConstJobType.WEATHER_CHANGE_NOTIFICATION,
+                schedule_expression="manual",
+                retry_count=3,
+                timeout_minutes=30,
+                enabled=True,
+                **parameters
+            )
+            
+            notification_job = WeatherChangeNotificationJob(config)
+
+            await self._update_job_progress(job_id, 50.0, "날씨 변경 감지 및 알림 처리 중")
+
+            # 실행
+            result = await asyncio.to_thread(notification_job.run)
+
+            await self._update_job_result(job_id, to_dict_safe(result))
+            await self._add_log(job_id, LogLevel.INFO, "날씨 변경 알림 작업 완료", to_dict_safe(result))
+
+        except Exception as e:
+            await self._add_log(job_id, LogLevel.ERROR, f"날씨 변경 알림 오류: {str(e)}")
             raise
 
     async def get_job(self, job_id: str) -> Optional[JobInfo]:
