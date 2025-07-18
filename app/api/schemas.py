@@ -24,6 +24,8 @@ class JobStatus(str, Enum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     STOPPED = "STOPPED"
+    STOPPING = "STOPPING"
+    CANCELLED = "CANCELLED"
 
 class LogLevel(str, Enum):
     """로그 레벨"""
