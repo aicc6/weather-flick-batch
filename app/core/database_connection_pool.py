@@ -21,19 +21,19 @@ from config.settings import get_database_config
 class PoolConfig:
     """커넥션 풀 설정"""
 
-    # 동기 풀 설정 (타임아웃 문제 해결을 위한 최적화)
-    sync_min_connections: int = 5
-    sync_max_connections: int = 20
+    # 동기 풀 설정 (연결 고갈 문제 해결을 위해 크기 축소)
+    sync_min_connections: int = 2
+    sync_max_connections: int = 10
 
     # 비동기 풀 설정
-    async_min_connections: int = 5
-    async_max_connections: int = 25
+    async_min_connections: int = 2
+    async_max_connections: int = 10
 
     # 성능 설정 (타임아웃 문제 해결)
-    connection_timeout: int = 60  # 연결 타임아웃 60초로 증가
-    idle_timeout: int = 600  # 유휴 타임아웃 10분으로 증가
-    max_retries: int = 5  # 재시도 횟수 증가
-    health_check_interval: int = 120  # 헬스체크 간격 2분으로 증가
+    connection_timeout: int = 30  # 연결 타임아웃 30초로 조정
+    idle_timeout: int = 300  # 유휴 타임아웃 5분으로 조정
+    max_retries: int = 3  # 재시도 횟수 조정
+    health_check_interval: int = 60  # 헬스체크 간격 1분으로 조정
 
 
 class DatabaseConnectionPool:

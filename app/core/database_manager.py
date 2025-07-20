@@ -9,6 +9,7 @@ import psycopg2
 import psycopg2.extras
 import asyncpg
 import json
+import threading
 from contextlib import contextmanager, asynccontextmanager
 from typing import Dict, List, Any, Optional, Generator, AsyncGenerator
 from datetime import datetime
@@ -88,8 +89,22 @@ class BaseDatabaseManager(ABC):
 
 class SyncDatabaseManager(BaseDatabaseManager):
     """동기 데이터베이스 매니저 (커넥션 풀 사용)"""
+    
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls, pool_config: PoolConfig = None):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
 
     def __init__(self, pool_config: PoolConfig = None):
+        # 이미 초기화된 경우 건너뛰기
+        if hasattr(self, '_initialized'):
+            return
+            
         super().__init__()
         self.connection_pool = get_connection_pool(pool_config)
         
@@ -97,6 +112,7 @@ class SyncDatabaseManager(BaseDatabaseManager):
         try:
             self.connection_pool.initialize_sync_pool()
             self.logger.info("동기 데이터베이스 매니저 초기화 완료 (커넥션 풀 사용)")
+            self._initialized = True
         except Exception as e:
             self.logger.error(f"커넥션 풀 초기화 실패: {e}")
             raise
