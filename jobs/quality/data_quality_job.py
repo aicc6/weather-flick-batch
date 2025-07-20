@@ -80,10 +80,12 @@ class DataQualityJob(BaseJob):
 
     def execute(self) -> JobResult:
         """데이터 품질 검사 실행"""
+        from app.core.base_job import JobStatus
+
         result = JobResult(
             job_name=self.config.job_name,
             job_type=self.config.job_type,
-            status="running",
+            status=JobStatus.RUNNING,
             start_time=datetime.now(),
         )
 
@@ -115,6 +117,7 @@ class DataQualityJob(BaseJob):
             if critical_issues:
                 self._notify_critical_issues(critical_issues)
 
+            # 결과 업데이트 (상태는 BaseJob.run에서 설정)
             result.processed_records = saved_count
             result.metadata = {
                 "tables_checked": self.processed_tables,
@@ -133,6 +136,7 @@ class DataQualityJob(BaseJob):
 
         except Exception as e:
             self.logger.error(f"데이터 품질 검사 실패: {str(e)}")
+            result.error_message = str(e)
             raise
 
         return result
