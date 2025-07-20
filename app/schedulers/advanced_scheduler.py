@@ -83,6 +83,10 @@ class BatchJobType(Enum):
     HEALTH_CHECK = "health_check"
     METRICS_COLLECTION = "metrics_collection"
     NOTIFICATION = "notification"
+    WEATHER_CHANGE_NOTIFICATION = "weather_change_notification"
+    
+    # 데이터 품질
+    DATA_QUALITY_CHECK = "data_quality_check"
 
 
 class JobPriority(Enum):

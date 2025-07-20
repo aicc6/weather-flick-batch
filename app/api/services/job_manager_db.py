@@ -12,6 +12,7 @@ from typing import Optional, List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor
 import threading
 from dataclasses import asdict, is_dataclass
+from enum import Enum
 from sqlalchemy import and_, desc, create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError

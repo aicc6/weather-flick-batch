@@ -28,12 +28,12 @@ class WeatherChangeNotificationJob(BaseJob):
     
     def __init__(self, config=None):
         from app.core.base_job import JobConfig
-        from config.constants import JobType
+        from app.schedulers.advanced_scheduler import BatchJobType
         
         if config is None:
             config = JobConfig(
                 job_name="weather_change_notification",
-                job_type=JobType.WEATHER_CHANGE_NOTIFICATION,
+                job_type=BatchJobType.WEATHER_CHANGE_NOTIFICATION,
                 schedule_expression="0 9,15,21 * * *",  # 하루 3번 실행
                 retry_count=3,
                 timeout_minutes=30,
