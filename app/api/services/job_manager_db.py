@@ -42,6 +42,18 @@ websocket_module = None
 
 def to_dict_safe(obj):
     from pydantic import BaseModel
+    import asyncio
+
+    # 코루틴 객체 처리
+    if asyncio.iscoroutine(obj):
+        return {"error": "coroutine object cannot be serialized", "type": "coroutine"}
+
+    # 코루틴 함수 처리
+    if asyncio.iscoroutinefunction(obj):
+        return {
+            "error": "coroutine function cannot be serialized",
+            "type": "coroutine_function",
+        }
 
     if is_dataclass(obj):
         return asdict(obj)
@@ -367,33 +379,30 @@ class JobManagerDB:
             # 진행률 업데이트
             await self._update_job_progress(job_id, 25.0, "KTO 데이터 수집 중")
 
-            # 실제 수집 로직 호출
-            result = await asyncio.to_thread(collector.collect_all_data)
+            # 실제 수집 로직 호출 (코루틴 실행)
+            result = await collector.collect_all_data()
 
-            # 결과 저장
-            await self._update_job_result(
-                job_id,
-                {
-                    "status": "completed",
-                    "total_items": (
-                        result.get("total_items", 0) if isinstance(result, dict) else 0
-                    ),
-                    "new_items": (
-                        result.get("new_items", 0) if isinstance(result, dict) else 0
-                    ),
-                    "updated_items": (
-                        result.get("updated_items", 0)
-                        if isinstance(result, dict)
-                        else 0
-                    ),
-                    "errors": (
-                        result.get("errors", 0) if isinstance(result, dict) else 0
-                    ),
-                },
-            )
+            # 결과 저장 (안전한 직렬화)
+            result_summary = {
+                "status": "completed",
+                "total_items": (
+                    result.get("total_items", 0) if isinstance(result, dict) else 0
+                ),
+                "new_items": (
+                    result.get("new_items", 0) if isinstance(result, dict) else 0
+                ),
+                "updated_items": (
+                    result.get("updated_items", 0) if isinstance(result, dict) else 0
+                ),
+                "errors": (result.get("errors", 0) if isinstance(result, dict) else 0),
+            }
 
+            await self._update_job_result(job_id, result_summary)
+
+            # 로그에 안전한 결과 저장
+            safe_result = to_dict_safe(result) if result else {}
             await self._add_log(
-                job_id, LogLevel.INFO, "KTO 데이터 수집 완료", {"result": result}
+                job_id, LogLevel.INFO, "KTO 데이터 수집 완료", {"result": safe_result}
             )
 
         except Exception as e:
