@@ -139,9 +139,7 @@ class FCMNotificationChannel(NotificationChannel):
                 icon="/pwa-192x192.png", badge="/pwa-64x64.png", vibrate=[200, 100, 200]
             ),
             fcm_options=messaging.WebpushFCMOptions(
-                link=data.get(
-                    "url", self._get_default_push_url()
-                )  # 클릭 시 이동할 URL
+                link=data.get("url", self._get_default_push_url())  # 클릭 시 이동할 URL
             ),
         )
 
@@ -169,8 +167,8 @@ class FCMNotificationChannel(NotificationChannel):
 
     def _get_default_push_url(self) -> str:
         """기본 푸시 알림 URL 조회"""
-        base_url = os.getenv('FCM_PUSH_BASE_URL', 'https://weatherflick.com')
-        default_path = os.getenv('FCM_PUSH_DEFAULT_PATH', '/travel-plans')
+        base_url = os.getenv("FCM_PUSH_BASE_URL", "https://weatherflick.com")
+        default_path = os.getenv("FCM_PUSH_DEFAULT_PATH", "/travel-plans")
         return f"{base_url}{default_path}"
 
     def _get_user_fcm_tokens(self, user_id: str) -> List[str]:
@@ -237,8 +235,8 @@ class FCMNotificationChannel(NotificationChannel):
 
 def _get_default_push_url_static() -> str:
     """기본 푸시 알림 URL 조회 (정적 함수)"""
-    base_url = os.getenv('FCM_PUSH_BASE_URL', 'https://weatherflick.com')
-    default_path = os.getenv('FCM_PUSH_DEFAULT_PATH', '/travel-plans')
+    base_url = os.getenv("FCM_PUSH_BASE_URL", "https://weatherflick.com")
+    default_path = os.getenv("FCM_PUSH_DEFAULT_PATH", "/travel-plans")
     return f"{base_url}{default_path}"
 
 
