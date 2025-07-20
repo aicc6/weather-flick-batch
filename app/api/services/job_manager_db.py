@@ -781,6 +781,40 @@ class JobManagerDB:
 
         return True
 
+    async def delete_job(self, job_id: str) -> bool:
+        """작업 삭제"""
+        db = self.get_db()
+        try:
+            job = (
+                db.query(BatchJobExecution)
+                .filter(BatchJobExecution.id == job_id)
+                .first()
+            )
+            if not job:
+                logger.warning(f"작업을 찾을 수 없습니다: {job_id}")
+                return False
+
+            if job.status == JobStatus.RUNNING.value:
+                logger.warning(f"실행 중인 작업을 삭제하려고 시도: {job_id}")
+                return False
+
+            # 관련 로그 데이터 삭제
+            db.query(BatchJobDetail).filter(BatchJobDetail.job_id == job_id).delete()
+
+            # 작업 삭제
+            db.delete(job)
+            db.commit()
+
+            logger.info(f"작업 삭제 완료: {job_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"작업 삭제 중 오류 발생: {e}")
+            db.rollback()
+            return False
+        finally:
+            db.close()
+
     async def get_statistics(
         self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None
     ) -> List[JobStatistics]:

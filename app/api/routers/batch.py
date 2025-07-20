@@ -159,6 +159,25 @@ async def stop_job(
     return {"message": "작업 중단 요청이 전송되었습니다."}
 
 
+@router.delete("/jobs/{job_id}")
+async def delete_job(
+    job_id: str,
+    api_key: str = Header(None, alias="X-API-Key"),
+):
+    """작업 삭제"""
+    # API 키 검증
+    if api_key != settings.API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    manager = get_job_manager()
+    success = await manager.delete_job(job_id=job_id)
+
+    if not success:
+        raise HTTPException(status_code=400, detail="작업을 삭제할 수 없습니다.")
+
+    return {"message": "작업이 성공적으로 삭제되었습니다.", "job_id": job_id}
+
+
 @router.get("/statistics", response_model=List[JobStatistics])
 async def get_statistics(
     start_date: Optional[datetime] = None,
