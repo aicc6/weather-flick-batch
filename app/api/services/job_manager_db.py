@@ -43,6 +43,7 @@ websocket_module = None
 def to_dict_safe(obj):
     from pydantic import BaseModel
     import asyncio
+    from enum import Enum
 
     # 코루틴 객체 처리
     if asyncio.iscoroutine(obj):
@@ -55,6 +56,17 @@ def to_dict_safe(obj):
             "type": "coroutine_function",
         }
 
+    # Enum 객체 처리
+    if isinstance(obj, Enum):
+        return obj.value
+
+    # JobResult 객체 처리
+    if hasattr(obj, "to_dict") and callable(getattr(obj, "to_dict")):
+        try:
+            return obj.to_dict()
+        except Exception:
+            pass
+
     if is_dataclass(obj):
         return asdict(obj)
     elif isinstance(obj, dict):
@@ -65,7 +77,11 @@ def to_dict_safe(obj):
         except Exception:
             pass
     try:
-        return json.loads(json.dumps(obj, default=lambda o: o.__dict__))
+        return json.loads(
+            json.dumps(
+                obj, default=lambda o: o.value if isinstance(o, Enum) else o.__dict__
+            )
+        )
     except Exception:
         return {"value": str(obj)}
 
@@ -613,6 +629,13 @@ class JobManagerDB:
             from app.core.base_job import JobConfig
             from config.constants import JobType as ConstJobType
 
+            # JobConfig에 전달할 매개변수에서 regions 제외
+            job_config_params = {
+                k: v
+                for k, v in parameters.items()
+                if k not in ["regions", "notification_channels", "threshold"]
+            }
+
             config = JobConfig(
                 job_name="weather_change_notification",
                 job_type=ConstJobType.WEATHER_CHANGE_NOTIFICATION,
@@ -620,7 +643,7 @@ class JobManagerDB:
                 retry_count=3,
                 timeout_minutes=30,
                 enabled=True,
-                **parameters,
+                **job_config_params,
             )
 
             notification_job = WeatherChangeNotificationJob(config)

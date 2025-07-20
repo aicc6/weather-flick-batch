@@ -57,6 +57,26 @@ class JobResult:
         """실패 여부"""
         return self.status == JobStatus.FAILED
 
+    def to_dict(self) -> Dict[str, Any]:
+        """안전한 딕셔너리 변환 (JSON 직렬화 가능)"""
+        return {
+            "job_name": self.job_name,
+            "job_type": self.job_type.value
+            if hasattr(self.job_type, "value")
+            else str(self.job_type),
+            "status": self.status.value
+            if hasattr(self.status, "value")
+            else str(self.status),
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "processed_records": self.processed_records,
+            "error_message": self.error_message,
+            "metadata": self.metadata,
+            "duration_seconds": self.duration_seconds,
+            "is_success": self.is_success,
+            "is_failure": self.is_failure,
+        }
+
 
 class BaseJob(ABC):
     """배치 작업 기본 클래스"""
