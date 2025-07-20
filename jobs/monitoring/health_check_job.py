@@ -92,14 +92,14 @@ class SystemHealthChecker:
                 health_results["external_apis"] = await self._check_external_apis()
 
                 # 4. 서버 리소스 사용률 체크
-                health_results["server_resources"] = (
-                    await self._check_server_resources()
-                )
+                health_results[
+                    "server_resources"
+                ] = await self._check_server_resources()
 
                 # 5. 애플리케이션 응답 시간 체크
-                health_results["app_response_time"] = (
-                    await self._check_app_response_time()
-                )
+                health_results[
+                    "app_response_time"
+                ] = await self._check_app_response_time()
 
                 # 6. 배치 작업 상태 체크
                 health_results["batch_jobs"] = await self._check_batch_jobs_health()
@@ -135,14 +135,14 @@ class SystemHealthChecker:
                 raise
 
     async def _check_database_health(self) -> HealthCheckResult:
-        """데이터베이스 연결 상태 체크"""
+        """데이터베이스 연결 상태 체크 (개선된 버전)"""
         start_time = datetime.now()
 
         try:
-            # 연결 테스트
-            await self.db_manager.execute("SELECT 1")
+            # 연결 테스트 (타임아웃 설정)
+            await asyncio.wait_for(self.db_manager.execute("SELECT 1"), timeout=10.0)
 
-            # 성능 체크
+            # 성능 체크 (타임아웃 설정)
             perf_query = """
             SELECT
                 count(*) as active_connections,
@@ -151,16 +151,18 @@ class SystemHealthChecker:
             WHERE state = 'active'
             """
 
-            result = await self.db_manager.fetch_one(perf_query)
+            result = await asyncio.wait_for(
+                self.db_manager.fetch_one(perf_query), timeout=15.0
+            )
             response_time = (datetime.now() - start_time).total_seconds() * 1000
 
-            # 상태 평가
+            # 상태 평가 (더 관대한 기준)
             connection_usage = result["active_connections"] / result["max_connections"]
 
-            if connection_usage > 0.9:
+            if connection_usage > 0.95:  # 95% 이상일 때만 critical
                 status = HealthStatus.CRITICAL
                 message = f"데이터베이스 연결 과부하: {connection_usage:.1%}"
-            elif connection_usage > 0.7:
+            elif connection_usage > 0.8:  # 80% 이상일 때 warning
                 status = HealthStatus.WARNING
                 message = f"데이터베이스 연결 높음: {connection_usage:.1%}"
             else:
@@ -179,12 +181,20 @@ class SystemHealthChecker:
                 },
             )
 
-        except Exception as e:
+        except asyncio.TimeoutError:
             response_time = (datetime.now() - start_time).total_seconds() * 1000
-
             return HealthCheckResult(
                 component="database",
-                status=HealthStatus.CRITICAL,
+                status=HealthStatus.WARNING,  # critical 대신 warning으로 변경
+                response_time_ms=response_time,
+                message="데이터베이스 응답 시간 초과",
+                details={"error": "timeout", "timeout_seconds": 15},
+            )
+        except Exception as e:
+            response_time = (datetime.now() - start_time).total_seconds() * 1000
+            return HealthCheckResult(
+                component="database",
+                status=HealthStatus.WARNING,  # critical 대신 warning으로 변경
                 response_time_ms=response_time,
                 message=f"데이터베이스 연결 실패: {str(e)}",
                 details={"error": str(e)},

@@ -21,6 +21,13 @@ class DatabaseConfig:
     password: str
     database: str
     port: int = 5432
+    # 연결 풀 설정 (타임아웃 문제 해결)
+    pool_size: int = 20
+    max_overflow: int = 30
+    pool_timeout: int = 30
+    pool_recycle: int = 3600  # 1시간마다 연결 재생성
+    connect_timeout: int = 60  # 연결 타임아웃 60초
+    read_timeout: int = 120  # 읽기 타임아웃 120초
 
 
 @dataclass
@@ -67,7 +74,7 @@ class AWSConfig:
 @dataclass
 class RedisConfig:
     """Redis 설정"""
-    
+
     host: str
     port: int
     password: str

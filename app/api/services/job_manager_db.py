@@ -6,6 +6,7 @@ import asyncio
 import logging
 import psutil
 import json
+import time
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor
@@ -251,27 +252,52 @@ class JobManagerDB:
             # 작업 실행
             asyncio.run(executor(job_id, parameters))
 
-            # 성공 처리
+            # 성공 처리 (재시도 로직 추가)
             if not self.running_jobs[job_id]["should_stop"]:
-                db = self.get_db()
+                success_updated = False
+                retry_count = 0
+                max_retries = 3
+
+                while not success_updated and retry_count < max_retries:
+                    try:
+                        db = self.get_db()
+                        job = (
+                            db.query(BatchJobExecution)
+                            .filter(BatchJobExecution.id == job_id)
+                            .first()
+                        )
+                        if job:
+                            job.status = JobStatus.COMPLETED.value
+                            job.progress = 100.0
+                            job.completed_at = datetime.utcnow()
+                            # 재시도 상태 초기화
+                            if hasattr(job, "retry_status"):
+                                job.retry_status = "COMPLETED"
+                            db.commit()
+                            success_updated = True
+                            logger.info(f"작업 {job_id} 완료 상태로 업데이트됨")
+                        db.close()
+                    except Exception as db_error:
+                        retry_count += 1
+                        logger.warning(
+                            f"작업 {job_id} 완료 상태 업데이트 실패 (시도 {retry_count}/{max_retries}): {db_error}"
+                        )
+                        if retry_count < max_retries:
+                            time.sleep(1)  # 1초 대기 후 재시도
+                        else:
+                            logger.error(f"작업 {job_id} 완료 상태 업데이트 최종 실패")
+
+                # 로그 추가 (재시도 로직 포함)
                 try:
-                    job = (
-                        db.query(BatchJobExecution)
-                        .filter(BatchJobExecution.id == job_id)
-                        .first()
-                    )
-                    if job:
-                        job.status = JobStatus.COMPLETED.value
-                        job.progress = 100.0
-                        job.completed_at = datetime.utcnow()
-                        db.commit()
-                finally:
-                    db.close()
+                    asyncio.run(self._add_log(job_id, LogLevel.INFO, "작업 완료"))
+                except Exception as log_error:
+                    logger.warning(f"작업 {job_id} 로그 추가 실패: {log_error}")
 
-                asyncio.run(self._add_log(job_id, LogLevel.INFO, "작업 완료"))
-
-                # 작업 완료 알림 발송
-                self._send_notification_sync(job_id, "job_completed")
+                # 작업 완료 알림 발송 (재시도 로직 포함)
+                try:
+                    self._send_notification_sync(job_id, "job_completed")
+                except Exception as notify_error:
+                    logger.warning(f"작업 {job_id} 알림 발송 실패: {notify_error}")
 
         except Exception as e:
             # 실패 처리
@@ -286,7 +312,13 @@ class JobManagerDB:
                     job.status = JobStatus.FAILED.value
                     job.error_message = str(e)
                     job.completed_at = datetime.utcnow()
+                    # 재시도 상태 설정
+                    if hasattr(job, "retry_status"):
+                        job.retry_status = "FAILED"
                     db.commit()
+                    logger.info(f"작업 {job_id} 실패 상태로 업데이트됨")
+            except Exception as db_error:
+                logger.error(f"작업 실패 상태 업데이트 실패: {db_error}")
             finally:
                 db.close()
 

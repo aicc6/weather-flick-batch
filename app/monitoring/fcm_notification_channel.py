@@ -34,24 +34,40 @@ class FCMNotificationChannel(NotificationChannel):
         self._initialize_firebase()
 
     def _initialize_firebase(self):
-        """Firebase Admin SDK 초기화"""
+        """Firebase Admin SDK 초기화 (싱글톤 패턴)"""
         try:
             # 이미 초기화되어 있는지 확인
             firebase_admin.get_app()
             self.logger.info("Firebase Admin SDK 이미 초기화됨")
+            return
         except ValueError:
             # 초기화되지 않은 경우 초기화 진행
-            try:
-                cred = credentials.Certificate(self.config.credentials_path)
-                firebase_app_config = {}
-                if self.config.project_id:
-                    firebase_app_config["projectId"] = self.config.project_id
+            pass
 
-                firebase_admin.initialize_app(cred, firebase_app_config)
-                self.logger.info("Firebase Admin SDK 초기화 완료")
-            except Exception as e:
-                self.logger.error(f"Firebase Admin SDK 초기화 실패: {e}")
-                raise
+        try:
+            # 파일 존재 여부 확인
+            if not os.path.exists(self.config.credentials_path):
+                self.logger.warning(
+                    f"Firebase 인증 파일이 없습니다: {self.config.credentials_path}"
+                )
+                raise FileNotFoundError(
+                    f"Firebase 인증 파일을 찾을 수 없습니다: {self.config.credentials_path}"
+                )
+
+            cred = credentials.Certificate(self.config.credentials_path)
+            firebase_app_config = {}
+            if self.config.project_id:
+                firebase_app_config["projectId"] = self.config.project_id
+
+            firebase_admin.initialize_app(cred, firebase_app_config)
+            self.logger.info("Firebase Admin SDK 초기화 완료")
+        except firebase_admin.exceptions.AlreadyExistsError:
+            # 다른 곳에서 이미 초기화된 경우
+            self.logger.info("Firebase Admin SDK가 이미 다른 곳에서 초기화됨")
+        except Exception as e:
+            self.logger.error(f"Firebase Admin SDK 초기화 실패: {e}")
+            # 초기화 실패해도 알림 채널은 비활성화하지 않고 계속 진행
+            raise
 
     def send_notification(self, alert: Alert) -> bool:
         """FCM 푸시 알림 발송"""
