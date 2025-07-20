@@ -29,8 +29,6 @@ from jobs.system_maintenance.log_cleanup_job import log_cleanup_task
 from jobs.monitoring.health_check_job import health_check_task
 from jobs.recommendation.recommendation_job import RecommendationJob
 from jobs.quality.data_quality_job import DataQualityJob
-# 지역 동기화 작업 제거됨 - regions 테이블 직접 수정 방지
-# from jobs.region_sync import run_region_unification_job
 
 # from jobs.tourism.tourism_sync_job import TourismSyncJob  # 존재하지 않는 모듈
 from jobs.tourism.comprehensive_tourism_job import (
@@ -178,30 +176,6 @@ class WeatherFlickBatchSystem:
             minute=0,
         )
 
-        # 지역 정보 동기화 작업 제거됨 - regions 테이블 직접 수정 방지
-        # region_sync_config = BatchJobConfig(
-        #     job_id="region_sync",
-        #     job_type=BatchJobType.DATA_SYNC,
-        #     name="지역 정보 동기화",
-        #     description="KTO/KMA API 지역 정보 동기화 및 좌표 변환 검증",
-        #     priority=JobPriority.MEDIUM,
-        #     max_instances=1,
-        #     timeout=1800,  # 30분
-        #     retry_attempts=2,
-        # )
-
-        # 지역 동기화 작업 함수 생성
-        # def region_sync_task():
-        #     return asyncio.run(run_region_unification_job())
-
-        # self.batch_manager.register_job(
-        #     region_sync_config,
-        #     region_sync_task,
-        #     trigger="cron",
-        #     day_of_week="mon",
-        #     hour=3,
-        #     minute=0,
-        # )
 
         self.logger.info("데이터 관리 배치 작업 설정 완료")
 

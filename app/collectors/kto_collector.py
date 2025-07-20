@@ -61,72 +61,6 @@ class KTODataCollector(KTOAPIClient):
             ),
         }
 
-    # ========== 지역 코드 관련 메서드 ==========
-
-    def get_area_codes(self, area_code: str = None) -> List[Dict]:
-        """지역 코드 정보 조회"""
-        params = {
-            "numOfRows": 50,
-            "pageNo": 1,
-        }
-        if area_code:
-            params["areaCode"] = area_code
-
-        body = self.make_request("areaCode2", params)
-        if not body or "items" not in body:
-            self.logger.warning("지역 코드 조회 결과가 없습니다.")
-            return []
-
-        items = body["items"].get("item", [])
-        if isinstance(items, dict):
-            items = [items]
-
-        areas = []
-        for item in items:
-            area_data = {
-                "area_code": item.get("code"),
-                "area_name": item.get("name"),
-                "region_level": 1 if not area_code else 2,
-                "parent_area_code": area_code,
-                "created_at": datetime.now(),
-            }
-            areas.append(area_data)
-
-        self.logger.info(f"지역 코드 {len(areas)}개 수집 완료")
-        return areas
-
-    def get_sigungu_codes(self, area_code: str) -> List[Dict]:
-        """시군구 코드 목록 조회"""
-        params = {
-            "areaCode": area_code,
-            "numOfRows": 100,
-            "pageNo": 1,
-        }
-
-        body = self.make_request("areaCode2", params)
-        if not body or "items" not in body:
-            self.logger.debug(f"시군구 코드 조회 결과가 없습니다. (지역: {area_code})")
-            return []
-
-        items = body["items"].get("item", [])
-        if isinstance(items, dict):
-            items = [items]
-
-        sigungus = []
-        for item in items:
-            sigungu_data = {
-                "area_code": item.get("code"),
-                "area_name": item.get("name"),
-                "parent_area_code": area_code,
-                "region_level": 2,
-                "created_at": datetime.now(),
-            }
-            sigungus.append(sigungu_data)
-
-        self.logger.debug(
-            f"시군구 코드 {len(sigungus)}개 수집 완료 (지역: {area_code})"
-        )
-        return sigungus
 
     # ========== 관광지 정보 관련 메서드 ==========
 
@@ -421,8 +355,6 @@ class KTODataCollector(KTOAPIClient):
             ]
 
         comprehensive_data = {
-            "area_codes": [],
-            "detailed_area_codes": [],
             "category_codes": [],
             "tourist_attractions": [],
             "cultural_facilities": [],
@@ -447,22 +379,13 @@ class KTODataCollector(KTOAPIClient):
 
         self.logger.info("=== 종합 관광 데이터 수집 시작 ===")
 
-        # 1. 지역 코드 수집
-        self.logger.info("1. 지역 코드 수집")
-        comprehensive_data["area_codes"] = self.get_area_codes()
 
-        # 2. 세부 지역 코드 수집
-        self.logger.info("2. 세부 지역 코드 수집")
-        for area_code in area_codes:
-            detailed_codes = self.get_sigungu_codes(area_code)
-            comprehensive_data["detailed_area_codes"].extend(detailed_codes)
-
-        # 3. 카테고리 코드 수집
-        self.logger.info("3. 카테고리 코드 수집")
+        # 1. 카테고리 코드 수집
+        self.logger.info("1. 카테고리 코드 수집")
         comprehensive_data["category_codes"] = self.get_category_codes()
 
-        # 4. 컨텐츠 타입별 데이터 수집
-        self.logger.info("4. 컨텐츠 타입별 데이터 수집")
+        # 2. 컨텐츠 타입별 데이터 수집
+        self.logger.info("2. 컨텐츠 타입별 데이터 수집")
         for content_type_id, data_key in content_types.items():
             self.logger.info(f"- {data_key} 수집 (타입: {content_type_id})")
             for area_code in area_codes:
@@ -471,8 +394,8 @@ class KTODataCollector(KTOAPIClient):
                 )
                 comprehensive_data[data_key].extend(attractions)
 
-        # 5. 축제/행사 정보 수집 (현재 날짜 기준)
-        self.logger.info("5. 축제/행사 정보 수집")
+        # 3. 축제/행사 정보 수집 (현재 날짜 기준)
+        self.logger.info("3. 축제/행사 정보 수집")
         current_date = datetime.now().strftime("%Y%m%d")
         festivals = self.get_festivals_events(start_date=current_date)
         comprehensive_data["festivals_events"].extend(festivals)

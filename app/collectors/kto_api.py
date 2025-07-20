@@ -279,30 +279,6 @@ class KTODataCollector:
         self.logger.info(f"[{endpoint}] {len(items)}개 데이터 수집 완료")
         return items
 
-    def get_area_codes(self, area_code: str = None) -> List[Dict]:
-        """지역 코드 정보 조회"""
-        params = {
-            "serviceKey": self.api_key,
-            "numOfRows": 50,
-            "MobileOS": "ETC",
-            "MobileApp": "WeatherFlick",
-            "_type": "json",
-        }
-        if area_code:
-            params["areaCode"] = area_code
-        return self._fetch_item_list("areaCode2", params)
-
-    def get_detailed_area_codes(self, area_code: str) -> List[Dict]:
-        """세부 지역 코드 정보 조회 (시군구)"""
-        params = {
-            "serviceKey": self.api_key,
-            "numOfRows": 100,
-            "MobileOS": "ETC",
-            "MobileApp": "WeatherFlick",
-            "_type": "json",
-            "areaCode": area_code,
-        }
-        return self._fetch_item_list("areaCode2", params)
 
     def get_tourist_attractions(
         self,
@@ -485,8 +461,6 @@ class KTODataCollector:
             ]
 
         comprehensive_data = {
-            "area_codes": [],
-            "detailed_area_codes": [],
             "category_codes": [],
             "tourist_attractions": [],
             "cultural_facilities": [],
@@ -511,19 +485,11 @@ class KTODataCollector:
 
         self.logger.info("=== 종합 관광 데이터 수집 시작 ===")
 
-        self.logger.info("\n1. 지역 코드 수집")
-        comprehensive_data["area_codes"] = self.get_area_codes()
 
-        self.logger.info("\n2. 세부 지역 코드 수집")
-        for area_code in area_codes:
-            detailed_codes = self.get_detailed_area_codes(area_code)
-            comprehensive_data["detailed_area_codes"].extend(detailed_codes)
-            time.sleep(0.1)
-
-        self.logger.info("\n3. 카테고리 코드 수집")
+        self.logger.info("\n1. 카테고리 코드 수집")
         comprehensive_data["category_codes"] = self.get_category_codes()
 
-        self.logger.info("\n4. 컨텐츠 타입별 데이터 수집")
+        self.logger.info("\n2. 컨텐츠 타입별 데이터 수집")
         for content_type_id, data_key in content_types.items():
             self.logger.info(f"\n- {data_key} 수집 (타입: {content_type_id})")
             for area_code in area_codes:
@@ -533,7 +499,7 @@ class KTODataCollector:
                 comprehensive_data[data_key].extend(attractions)
                 time.sleep(0.2)
 
-        self.logger.info("\n5. 축제/행사 정보 수집")
+        self.logger.info("\n3. 축제/행사 정보 수집")
         current_date = datetime.now().strftime("%Y%m%d")
         festivals = self.get_festivals_events(event_start_date=current_date)
         comprehensive_data["festivals_events"].extend(festivals)
