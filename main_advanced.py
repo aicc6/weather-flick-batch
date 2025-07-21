@@ -22,6 +22,14 @@ from app.schedulers.advanced_scheduler import (
 from app.core.logger import get_logger
 from config.settings import get_app_settings
 
+# 타임존 처리 유틸리티 추가
+from utils.timezone_batch_utils import (
+    BatchTimezoneUtils,
+    ExternalApiTimezoneHelper,
+    log_batch_execution,
+    get_batch_job_schedule_config
+)
+
 # 배치 작업 임포트
 from jobs.data_management.weather_update_job import weather_update_task
 from jobs.data_management.destination_sync_job import destination_sync_task
@@ -47,6 +55,13 @@ class WeatherFlickBatchSystem:
         self.settings = get_app_settings()
         self.batch_manager = get_batch_manager()
         self.shutdown_requested = False
+        
+        # 타임존 유틸리티 초기화
+        self.timezone_utils = BatchTimezoneUtils()
+        self.api_helper = ExternalApiTimezoneHelper()
+        
+        # 배치 스케줄 설정 가져오기
+        self.schedule_config = get_batch_job_schedule_config()
 
         # 시그널 핸들러 등록
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -56,6 +71,31 @@ class WeatherFlickBatchSystem:
         """시스템 시그널 핸들러"""
         self.logger.info(f"종료 시그널 수신: {signum}")
         self.shutdown_requested = True
+    
+    def _create_batch_wrapper(self, job_name: str, job_func):
+        """배치 작업을 타임존 처리와 함께 래핑"""
+        @log_batch_execution(job_name)
+        def wrapped_job():
+            start_time = self.timezone_utils.get_collection_timestamp()
+            self.logger.info(f"[{job_name}] 작업 시작 - UTC: {start_time.isoformat()}")
+            
+            try:
+                result = job_func()
+                
+                end_time = self.timezone_utils.get_collection_timestamp()
+                duration = self.timezone_utils.format_duration(start_time, end_time)
+                
+                self.logger.info(f"[{job_name}] 작업 완료 - 소요시간: {duration}")
+                return result
+                
+            except Exception as e:
+                end_time = self.timezone_utils.get_collection_timestamp()
+                duration = self.timezone_utils.format_duration(start_time, end_time)
+                
+                self.logger.error(f"[{job_name}] 작업 실패 - 소요시간: {duration}, 오류: {str(e)}")
+                raise
+        
+        return wrapped_job
 
     def setup_data_management_jobs(self):
         """데이터 관리 배치 작업 설정"""
@@ -72,12 +112,14 @@ class WeatherFlickBatchSystem:
             retry_attempts=3,
         )
 
-        # 비동기 작업을 동기 래퍼로 감싸기
+        # 비동기 작업을 동기 래퍼로 감싸기 (타임존 처리 포함)
         def weather_update_sync():
             return asyncio.run(weather_update_task())
 
+        weather_job_wrapped = self._create_batch_wrapper("날씨 데이터 업데이트", weather_update_sync)
+        
         self.batch_manager.register_job(
-            weather_config, weather_update_sync, trigger="interval", hours=1
+            weather_config, weather_job_wrapped, trigger="interval", hours=1
         )
 
         # 여행지 정보 동기화 (매일 새벽 3시)
@@ -93,12 +135,14 @@ class WeatherFlickBatchSystem:
             dependencies=[],
         )
 
-        # 비동기 작업을 동기 래퍼로 감싸기
+        # 비동기 작업을 동기 래퍼로 감싸기 (타임존 처리 포함)
         def destination_sync_sync():
             return asyncio.run(destination_sync_task())
 
+        destination_job_wrapped = self._create_batch_wrapper("여행지 정보 동기화", destination_sync_sync)
+        
         self.batch_manager.register_job(
-            destination_config, destination_sync_sync, trigger="cron", hour=3, minute=0
+            destination_config, destination_job_wrapped, trigger="cron", hour=3, minute=0
         )
 
         # 종합 관광정보 수집 작업 (매주 일요일 새벽 2시)
@@ -117,9 +161,11 @@ class WeatherFlickBatchSystem:
             job = ComprehensiveTourismJob()
             return asyncio.run(job.execute())
 
+        comprehensive_job_wrapped = self._create_batch_wrapper("종합 관광정보 수집", comprehensive_tourism_task)
+
         self.batch_manager.register_job(
             comprehensive_tourism_config,
-            comprehensive_tourism_task,
+            comprehensive_job_wrapped,
             trigger="cron",
             day_of_week="sun",
             hour=2,
@@ -399,15 +445,28 @@ class WeatherFlickBatchSystem:
             self.shutdown()
 
     def _log_job_status(self):
-        """작업 상태 로깅"""
+        """작업 상태 로깅 (타임존 정보 포함)"""
         try:
             job_status = self.batch_manager.get_job_status()
+            current_time = self.timezone_utils.get_collection_timestamp()
+            current_kst = current_time.astimezone(self.timezone_utils.KST)
 
             if job_status:
-                self.logger.info("현재 등록된 배치 작업 상태:")
+                self.logger.info(f"배치 작업 상태 (현재 시간: UTC {current_time.strftime('%H:%M')}, KST {current_kst.strftime('%H:%M')}):")
                 for job_id, status in job_status.items():
                     next_run = status.get("next_run", "N/A")
-                    self.logger.info(f"  - {job_id}: 다음 실행 {next_run}")
+                    
+                    # 다음 실행 시간을 KST로 변환
+                    if next_run != "N/A" and hasattr(next_run, 'astimezone'):
+                        try:
+                            next_run_kst = next_run.astimezone(self.timezone_utils.KST)
+                            next_run_str = f"UTC {next_run.strftime('%m/%d %H:%M')}, KST {next_run_kst.strftime('%m/%d %H:%M')}"
+                        except:
+                            next_run_str = str(next_run)
+                    else:
+                        next_run_str = str(next_run)
+                    
+                    self.logger.info(f"  - {job_id}: 다음 실행 {next_run_str}")
 
         except Exception as e:
             self.logger.error(f"작업 상태 로깅 실패: {e}")
@@ -428,10 +487,17 @@ def main():
     """메인 실행 함수"""
     # 로깅 초기화
     logger = get_logger(__name__)
+    
+    # 시작 시간 정보 (타임존 포함)
+    start_time = BatchTimezoneUtils.get_collection_timestamp()
+    start_kst = start_time.astimezone(BatchTimezoneUtils.KST)
 
     logger.info("=" * 60)
     logger.info("WeatherFlick 고급 배치 시스템")
     logger.info("배치 문서 기반 포괄적 스케줄링 시스템")
+    logger.info(f"시작 시간: UTC {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"시작 시간: KST {start_kst.strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"스케줄러 타임존: Asia/Seoul (KST)")
     logger.info("=" * 60)
 
     try:

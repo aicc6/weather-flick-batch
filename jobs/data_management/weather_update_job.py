@@ -5,13 +5,19 @@
 실행 주기: 1시간마다
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 
 from app.core.logger import get_logger
 from config.settings import get_weather_api_settings
 from app.core.database_manager_extension import get_extended_database_manager
 from app.core.unified_api_client import get_unified_api_client, APIProvider
+
+# 배치 타임존 유틸리티 추가
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent.parent / 'utils'))
+from timezone_batch_utils import BatchTimezoneUtils, ExternalApiTimezoneHelper
 
 
 class WeatherUpdateJob:
@@ -22,6 +28,10 @@ class WeatherUpdateJob:
         self.settings = get_weather_api_settings()
         self.db_manager = get_extended_database_manager()
         self.unified_client = get_unified_api_client()
+        
+        # 타임존 유틸리티 초기화
+        self.timezone_utils = BatchTimezoneUtils()
+        self.api_helper = ExternalApiTimezoneHelper()
 
     async def execute(self) -> Dict[str, Any]:
         """날씨 데이터 업데이트 실행 (통합 API 클라이언트 사용)"""
@@ -205,7 +215,7 @@ class WeatherUpdateJob:
                 "clouds": data["clouds"]["all"],
                 "visibility": visibility_km,
                 "uv_index": data.get("uvi", 0),
-                "recorded_at": datetime.utcfromtimestamp(data["dt"]),
+                "recorded_at": datetime.fromtimestamp(data["dt"], tz=timezone.utc),
             }
         except KeyError as e:
             self.logger.error(f"현재 날씨 데이터 파싱 실패: {e}")
@@ -218,7 +228,7 @@ class WeatherUpdateJob:
 
             for item in data["list"]:
                 forecast = {
-                    "forecast_time": datetime.utcfromtimestamp(item["dt"]),
+                    "forecast_time": datetime.fromtimestamp(item["dt"], tz=timezone.utc),
                     "temperature": item["main"]["temp"],
                     "feels_like": item["main"]["feels_like"],
                     "temp_min": item["main"]["temp_min"],
@@ -356,7 +366,7 @@ class WeatherUpdateJob:
                     max_temp,
                     avg_precipitation,
                     most_common_condition,
-                    datetime.now(),  # forecast_issued_at
+                    self.timezone_utils.get_collection_timestamp(),  # forecast_issued_at (UTC)
                 )
                 self.db_manager.execute_update(insert_query, params)
                 count += 1
