@@ -93,7 +93,22 @@ class BatchSystemWithAPI:
             )
 
             def weather_update_sync():
-                return asyncio.run(weather_update_task())
+                from app.core.async_database import get_async_db_manager, reset_async_db_manager
+                
+                async def run_with_cleanup():
+                    try:
+                        result = await weather_update_task()
+                        return result
+                    finally:
+                        # 작업 완료 후 데이터베이스 연결 정리
+                        try:
+                            db_manager = get_async_db_manager()
+                            await db_manager.close()
+                            reset_async_db_manager()
+                        except Exception as e:
+                            self.batch_logger.warning(f"데이터베이스 연결 정리 중 경고: {e}")
+                
+                return asyncio.run(run_with_cleanup())
 
             self.batch_manager.register_job(
                 weather_config, weather_update_sync, trigger="interval", minutes=30
@@ -112,7 +127,22 @@ class BatchSystemWithAPI:
             )
 
             def health_check_sync():
-                return asyncio.run(health_check_task())
+                from app.core.async_database import get_async_db_manager, reset_async_db_manager
+                
+                async def run_with_cleanup():
+                    try:
+                        result = await health_check_task()
+                        return result
+                    finally:
+                        # 작업 완료 후 데이터베이스 연결 정리
+                        try:
+                            db_manager = get_async_db_manager()
+                            await db_manager.close()
+                            reset_async_db_manager()
+                        except Exception as e:
+                            self.batch_logger.warning(f"데이터베이스 연결 정리 중 경고: {e}")
+                
+                return asyncio.run(run_with_cleanup())
 
             self.batch_manager.register_job(
                 health_config, health_check_sync, trigger="interval", minutes=5
@@ -131,9 +161,24 @@ class BatchSystemWithAPI:
             )
 
             def quality_check_task():
+                from app.core.async_database import get_async_db_manager, reset_async_db_manager
+                
                 job = DataQualityJob(quality_config)
                 if asyncio.iscoroutinefunction(job.run):
-                    return asyncio.run(job.run())
+                    async def run_with_cleanup():
+                        try:
+                            result = await job.run()
+                            return result
+                        finally:
+                            # 작업 완료 후 데이터베이스 연결 정리
+                            try:
+                                db_manager = get_async_db_manager()
+                                await db_manager.close()
+                                reset_async_db_manager()
+                            except Exception as e:
+                                self.batch_logger.warning(f"데이터베이스 연결 정리 중 경고: {e}")
+                    
+                    return asyncio.run(run_with_cleanup())
                 return job.run()
 
             self.batch_manager.register_job(
@@ -153,7 +198,22 @@ class BatchSystemWithAPI:
             )
 
             def pending_worker_task():
-                return asyncio.run(self._process_pending_jobs())
+                from app.core.async_database import get_async_db_manager, reset_async_db_manager
+                
+                async def run_with_cleanup():
+                    try:
+                        result = await self._process_pending_jobs()
+                        return result
+                    finally:
+                        # 작업 완료 후 데이터베이스 연결 정리
+                        try:
+                            db_manager = get_async_db_manager()
+                            await db_manager.close()
+                            reset_async_db_manager()
+                        except Exception as e:
+                            self.batch_logger.warning(f"데이터베이스 연결 정리 중 경고: {e}")
+                
+                return asyncio.run(run_with_cleanup())
 
             self.batch_manager.register_job(
                 pending_worker_config,
@@ -295,6 +355,26 @@ class BatchSystemWithAPI:
         if self.monitoring_system:
             # 모니터링 시스템 정리
             logger.info("Monitoring system stopped")
+        
+        # 데이터베이스 연결 정리
+        import asyncio
+        from app.core.async_database import get_async_db_manager
+        
+        async def cleanup_db():
+            try:
+                db_manager = get_async_db_manager()
+                await db_manager.close()
+                logger.info("데이터베이스 연결이 정상적으로 종료되었습니다")
+            except Exception as e:
+                logger.error(f"데이터베이스 연결 종료 중 오류: {e}")
+        
+        # 새로운 이벤트 루프를 생성하여 정리 작업 수행
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(cleanup_db())
+        finally:
+            loop.close()
 
         logger.info("System shutdown complete")
         sys.exit(0)

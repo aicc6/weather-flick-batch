@@ -264,7 +264,12 @@ class NotificationManager:
             
         except Exception as e:
             self.logger.error(f"알림 처리 중 오류: {e}")
-            await db.rollback()
+            # 데이터베이스 연결이 여전히 활성 상태인 경우에만 롤백 수행
+            try:
+                if not db.is_closed:
+                    await db.rollback()
+            except Exception as rollback_error:
+                self.logger.warning(f"롤백 실패 (무시가능): {rollback_error}")
     
     async def _get_template(
         self,
@@ -417,7 +422,8 @@ class NotificationManager:
             if self.slack_config.channel:
                 payload["channel"] = self.slack_config.channel
                 
-            async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(webhook_url, json=payload) as resp:
                     if resp.status == 200:
                         self.logger.info("슬랙 알림 발송 성공")

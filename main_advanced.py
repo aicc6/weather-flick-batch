@@ -96,6 +96,28 @@ class WeatherFlickBatchSystem:
                 raise
         
         return wrapped_job
+    
+    def _create_async_job_wrapper(self, async_job_func):
+        """비동기 작업을 동기로 변환하고 데이터베이스 연결을 정리하는 래퍼"""
+        def sync_wrapper():
+            from app.core.async_database import get_async_db_manager, reset_async_db_manager
+            
+            async def run_with_cleanup():
+                try:
+                    result = await async_job_func()
+                    return result
+                finally:
+                    # 작업 완료 후 데이터베이스 연결 정리
+                    try:
+                        db_manager = get_async_db_manager()
+                        await db_manager.close()
+                        reset_async_db_manager()  # 매니저 인스턴스 초기화
+                    except Exception as e:
+                        self.logger.warning(f"데이터베이스 연결 정리 중 경고: {e}")
+            
+            return asyncio.run(run_with_cleanup())
+        
+        return sync_wrapper
 
     def setup_data_management_jobs(self):
         """데이터 관리 배치 작업 설정"""
@@ -113,9 +135,7 @@ class WeatherFlickBatchSystem:
         )
 
         # 비동기 작업을 동기 래퍼로 감싸기 (타임존 처리 포함)
-        def weather_update_sync():
-            return asyncio.run(weather_update_task())
-
+        weather_update_sync = self._create_async_job_wrapper(weather_update_task)
         weather_job_wrapped = self._create_batch_wrapper("날씨 데이터 업데이트", weather_update_sync)
         
         self.batch_manager.register_job(
@@ -136,9 +156,7 @@ class WeatherFlickBatchSystem:
         )
 
         # 비동기 작업을 동기 래퍼로 감싸기 (타임존 처리 포함)
-        def destination_sync_sync():
-            return asyncio.run(destination_sync_task())
-
+        destination_sync_sync = self._create_async_job_wrapper(destination_sync_task)
         destination_job_wrapped = self._create_batch_wrapper("여행지 정보 동기화", destination_sync_sync)
         
         self.batch_manager.register_job(
@@ -159,7 +177,9 @@ class WeatherFlickBatchSystem:
 
         def comprehensive_tourism_task():
             job = ComprehensiveTourismJob()
-            return asyncio.run(job.execute())
+            async def execute_job():
+                return await job.execute()
+            return self._create_async_job_wrapper(execute_job)()
 
         comprehensive_job_wrapped = self._create_batch_wrapper("종합 관광정보 수집", comprehensive_tourism_task)
 
@@ -186,7 +206,9 @@ class WeatherFlickBatchSystem:
 
         def incremental_tourism_task():
             job = IncrementalTourismJob()
-            return asyncio.run(job.execute())
+            async def execute_job():
+                return await job.execute()
+            return self._create_async_job_wrapper(execute_job)()
 
         self.batch_manager.register_job(
             incremental_tourism_config,
@@ -211,7 +233,9 @@ class WeatherFlickBatchSystem:
         # 관광지 동기화 작업 함수 생성 - 증분 업데이트 재사용
         def tourism_sync_task():
             job = IncrementalTourismJob()
-            return asyncio.run(job.execute())
+            async def execute_job():
+                return await job.execute()
+            return self._create_async_job_wrapper(execute_job)()
 
         self.batch_manager.register_job(
             tourism_config,
@@ -241,8 +265,7 @@ class WeatherFlickBatchSystem:
         )
 
         # 비동기 작업을 동기 래퍼로 감싸기
-        def log_cleanup_sync():
-            return asyncio.run(log_cleanup_task())
+        log_cleanup_sync = self._create_async_job_wrapper(log_cleanup_task)
 
         self.batch_manager.register_job(
             log_cleanup_config, log_cleanup_sync, trigger="cron", hour=1, minute=0
@@ -292,8 +315,7 @@ class WeatherFlickBatchSystem:
         )
 
         # 비동기 작업을 동기 래퍼로 감싸기
-        def health_check_sync():
-            return asyncio.run(health_check_task())
+        health_check_sync = self._create_async_job_wrapper(health_check_task)
 
         self.batch_manager.register_job(
             health_check_config, health_check_sync, trigger="interval", minutes=5
@@ -302,7 +324,8 @@ class WeatherFlickBatchSystem:
         # 여행 플랜 날씨 변화 알림 작업 (하루 3번: 오전 9시, 오후 3시, 오후 9시)
         def weather_notification_task():
             job = WeatherChangeNotificationJob()
-            return asyncio.run(job.execute())
+            # WeatherChangeNotificationJob.execute()는 동기 함수이므로 직접 반환
+            return job.execute()
 
         # 하루 3번 실행 (9시, 15시, 21시)
         for hour in [9, 15, 21]:
@@ -477,6 +500,27 @@ class WeatherFlickBatchSystem:
 
         try:
             self.batch_manager.shutdown(wait=True)
+            
+            # 데이터베이스 연결 정리
+            import asyncio
+            from app.core.async_database import get_async_db_manager
+            
+            async def cleanup_db():
+                try:
+                    db_manager = get_async_db_manager()
+                    await db_manager.close()
+                    self.logger.info("데이터베이스 연결이 정상적으로 종료되었습니다")
+                except Exception as e:
+                    self.logger.error(f"데이터베이스 연결 종료 중 오류: {e}")
+            
+            # 새로운 이벤트 루프를 생성하여 정리 작업 수행
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(cleanup_db())
+            finally:
+                loop.close()
+            
             self.logger.info("배치 시스템이 정상적으로 종료되었습니다")
 
         except Exception as e:
@@ -489,8 +533,9 @@ def main():
     logger = get_logger(__name__)
     
     # 시작 시간 정보 (타임존 포함)
-    start_time = BatchTimezoneUtils.get_collection_timestamp()
-    start_kst = start_time.astimezone(BatchTimezoneUtils.KST)
+    timezone_utils = BatchTimezoneUtils()
+    start_time = timezone_utils.get_collection_timestamp()
+    start_kst = start_time.astimezone(timezone_utils.KST)
 
     logger.info("=" * 60)
     logger.info("WeatherFlick 고급 배치 시스템")

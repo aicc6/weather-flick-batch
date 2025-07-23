@@ -53,7 +53,15 @@ class AsyncDatabaseManager:
     
     async def close(self):
         """엔진 종료"""
-        await self.engine.dispose()
+        try:
+            # 모든 활성 연결 종료 대기
+            await self.engine.dispose()
+            logger.info("비동기 데이터베이스 엔진이 정상적으로 종료되었습니다")
+        except Exception as e:
+            logger.error(f"비동기 데이터베이스 엔진 종료 중 오류: {e}")
+            # RuntimeError는 이미 닫힌 이벤트 루프 관련 오류일 가능성이 높으므로 무시
+            if "Event loop is closed" not in str(e):
+                raise
 
 
 # 전역 인스턴스
@@ -65,3 +73,8 @@ def get_async_db_manager() -> AsyncDatabaseManager:
     if _async_db_manager is None:
         _async_db_manager = AsyncDatabaseManager()
     return _async_db_manager
+
+def reset_async_db_manager():
+    """비동기 데이터베이스 매니저 인스턴스 초기화"""
+    global _async_db_manager
+    _async_db_manager = None
